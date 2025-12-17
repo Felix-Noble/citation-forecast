@@ -22,8 +22,9 @@ if __name__ == '__main__':
     metric_tracker = ClassificationTracker(
         test_outs.shape, 20, 20, torch.float32, device
     )
+    model: torch.nn.Module = torch.nn.Linear(20, 20)
 
     for out in test_outs:
         logger.info(out.shape)
-        metric_tracker.store_output(out)
+        metric_tracker.store_output(model(out))
         logger.debug(metric_tracker.buffer_cursor)
