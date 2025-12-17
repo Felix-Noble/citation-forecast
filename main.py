@@ -1,7 +1,9 @@
+from sympy.polys.specialpolys import w_polys
 from config.config import config
 from src.utils.logging import setup_logger
 from src.metric_trackers.classification_tracker import ClassificationTracker
 
+from sklearn.metrics import roc_auc_score # pyright: ignore[reportMissingTypeStubs, reportUnknownVariableType]
 import torch
 
 from pathlib import Path
@@ -17,14 +19,24 @@ if __name__ == '__main__':
     device = torch.device(device)
 
     logger.info(f'Device: {device}')
-    test_outs = torch.randn((10,10,20))
+    n_out = 3
+    n_examps = 50
+    batch_size = 5
+    n_batches = n_examps // batch_size
 
+    test_x = torch.randn((n_batches, batch_size, 20))
+    test_y = torch.randint(0, n_out, (n_batches * batch_size,))
     metric_tracker = ClassificationTracker(
-        test_outs.shape, 20, 20, torch.float32, device
+        (batch_size, n_out), n_batches, n_examps, n_examps, torch.float32, device
     )
-    model: torch.nn.Module = torch.nn.Linear(20, 20)
+    model: torch.nn.Linear = torch.nn.Linear(20, n_out)
+     
+    for examp in test_x:
+        out: torch.Tensor = model(examp) # pyright: ignore[reportAny]
+        metric_tracker.store_output(out)
 
-    for out in test_outs:
-        logger.info(out.shape)
-        metric_tracker.store_output(model(out))
-        logger.debug(metric_tracker.buffer_cursor)
+    outputs = torch.softmax(metric_tracker._stack_buffer(), dim=1).cpu()
+    roc_auc = roc_auc_score(test_y, outputs, multi_class='ovo', average='weighted')
+    metric_tracker._log_metric('train roc_auc', roc_auc, 1)
+    report = metric_tracker.report()
+    print(report)

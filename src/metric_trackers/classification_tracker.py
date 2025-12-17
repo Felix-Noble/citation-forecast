@@ -40,7 +40,7 @@ class ClassificationTracker:
         self.output_store_cursor: int = 0
        
         # metric store/df
-        self.metric_store: dict[str, list[MetricTuple]]
+        self.metric_store: dict[str, list[MetricTuple]] = {}
         self.metric_df: pl.DataFrame = pl.DataFrame()
         #self.y_true: torch.Tensor = torch.tensor(False)
 
@@ -68,6 +68,11 @@ class ClassificationTracker:
         _ = self.buffer_cursor.fill_(0)
         self.output_store_cursor += self.output_store[-1].size(0)
 
+    def _stack_buffer(self) -> torch.Tensor:
+        " Stack buffer in place"
+        n_batches, batch_size, n_out = self.output_buffer.shape 
+        return self.output_buffer.view(n_batches * batch_size, n_out)
+
     def _store_output_fast(self, output: torch.Tensor) -> None:
         " Stores outputs in buffer only "
         with torch.cuda.stream(self.stream):
@@ -80,22 +85,16 @@ class ClassificationTracker:
         with torch.cuda.stream(self.stream):
             buffer_full = self.buffer_cursor >= self.output_buffer_size
 
-            torch.cond( # pyright: ignore[reportUnknownMemberType]
-                buffer_full,
-                lambda: self._flush_buffer(),
-                lambda: None,
-            )
-       
+            if buffer_full:
+                self._flush_buffer()
+
             self.output_buffer[self.buffer_cursor] = output.detach()
             _ = self.buffer_cursor.add_(1)
             
             store_full = self.output_store_cursor >= self.output_store_size
-            
-            torch.cond( # pyright: ignore[reportUnknownMemberType]
-                store_full,
-                lambda: self.calc_metrics(),
-                lambda: None,
-            )
+
+            if store_full:
+                pass
 
     def calc_metrics(self):
         return ('Function under construction')
@@ -125,6 +124,8 @@ class ClassificationTracker:
                     value: float,
                     weight: float | int,
                     ):
+        if name not in self.metric_store.keys():
+            self.metric_store[name] = []
         self.metric_store[name].append(MetricTuple(value, weight))
 
     def _aggregate_metrics(self) -> dict[str, float]:
@@ -132,13 +133,16 @@ class ClassificationTracker:
         aggregate_metrics = {k: float('nan') for k in self.metric_store.keys()} 
         for metric in aggregate_metrics.keys():
             df: pl.DataFrame = pl.DataFrame(self.metric_store[metric])
-            score: float = (df['score'] * df['weight']).sum() / (df['weigth'].sum())
+            score: float = (df['score'] * df['weight']).sum() / (df['weight'].sum())
             aggregate_metrics[metric] = score
 
         return aggregate_metrics 
 
-    def report(self, aggregate_metrics: dict[str, float]) -> str:
+    def report(self, aggregate_metrics: dict[str, float] | None=None) -> str:
         " Generates rich.Table, renders as string via capture(), returns"
+        if aggregate_metrics is None:
+            aggregate_metrics = self._aggregate_metrics()
+
         cols: list[str] = ['cyan', 'green']
         table: Table = Table(show_header=False, pad_edge=False) 
         for i, (k, v) in enumerate(aggregate_metrics.items()):
