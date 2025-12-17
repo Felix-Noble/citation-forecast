@@ -1,4 +1,3 @@
-from sympy.polys.specialpolys import w_polys
 from config.config import config
 from src.utils.logging import setup_logger
 from src.metric_trackers.classification_tracker import ClassificationTracker
