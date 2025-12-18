@@ -1,4 +1,5 @@
-import os
+# pyright: basic
+# pyright: reportAttributeAccessIssue=false, reportPrivateImportUsage=false
 
 def main(
     raw: str,
