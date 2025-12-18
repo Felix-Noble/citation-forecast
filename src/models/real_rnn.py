@@ -15,9 +15,7 @@ class R_RNN(nn.Module):
                  dtype: torch.dtype
                  ):
         super().__init__()
-    
+
     @override
     def forward(self, x: Tensor):
-        pass
-
-
+        return x        
