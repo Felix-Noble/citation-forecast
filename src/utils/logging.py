@@ -1,8 +1,8 @@
 # src/utils/logging.py
 from config.config import LogConfig
+from rich.logging import RichHandler
 import logging
 import os
-import sys
 from pathlib import Path
 
 def setup_logger(logger: logging.Logger, config: LogConfig = LogConfig('ERROR', 'INFO')):
@@ -25,7 +25,8 @@ def setup_logger(logger: logging.Logger, config: LogConfig = LogConfig('ERROR', 
     file_handler.setLevel(level_file)
     file_handler.setFormatter(formatter)
 
-    console_handler = logging.StreamHandler(sys.stdout)
+    #console_handler = logging.StreamHandler(sys.stdout)
+    console_handler = RichHandler()
     console_handler.setLevel(level_console) # Log everything to the console for development.
     console_handler.setFormatter(formatter)
 

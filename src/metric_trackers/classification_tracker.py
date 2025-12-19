@@ -2,7 +2,6 @@ from typing import Callable, NamedTuple
 from rich.table import Table
 from rich.console import Console
 from sklearn.metrics import roc_auc_score # pyright: ignore[reportUnknownVariableType, reportMissingTypeStubs] 
-import polars as pl
 import torch
 
 class MetricTuple(NamedTuple):
