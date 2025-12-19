@@ -1,6 +1,6 @@
 __pycache__/
-.git/
 data/
 logs/
 openai/
-
+types/
+build/

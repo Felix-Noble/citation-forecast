@@ -1,8 +1,16 @@
-# pyright: basic
-# pyright: reportAttributeAccessIssue=false, reportPrivateImportUsage=false
+#!/usr/bin/env python3
+# pyright: standard
+# pyright: reportAttributeAccessIssue=false, reportPrivateImportUsage=false, reportMissingTypeStubs=false
 import typer
+from config.config import config
+from src.utils.logging import setup_logger
+from logging import getLogger
+from pathlib import Path
+logger = getLogger(Path(__file__).stem)
+_ = setup_logger(logger, config.logging)
 app = typer.Typer()
 
+@app.callback(invoke_without_command=True)
 @app.command()
 def main(
     data_path: str,
@@ -30,7 +38,7 @@ def main(
             padding=False,
         )['input_ids']
 
-        return pd.Series(tokens)
+        return pd.Series(tokens, text.index)
 
     client = Client( 
         n_workers=n_workers,
@@ -48,22 +56,27 @@ def main(
     ddf = dd.read_parquet(
         data_path,
         engine='fastparquet'
-    )
+    ).persist()
+
+    logger.info(f'Loaded {int(len(ddf)):,} rows')
     ddf = ddf.dropna(subset=columns)
+    logger.info(f'Dropped nulls in [{", ".join(columns)}], {int(len(ddf)):,} remaining')
+    ddf = ddf.compute().reset_index(drop=True, inplace=False) 
     for col in columns:
+        #meta = pd.Series([], dtype='object', name=f'{col}_tokens') 
         ddf[col] = tokenizer.bos_token + ddf[col] + tokenizer.eos_token 
         console.print(f'Tokenising [green]{col}[/green]')
-        ddf[f'{col}_tokens'] = ddf[col].map_partitions(
-                                            tokenize_partition, 
-                                            tokenizer=tokenizer,
-                                            meta=(None, 'object')
-                                        )
+        ddf[f'{col}_tokens'] = tokenize_partition(
+            ddf[col],
+            tokenizer,
+        )
 
+    ddf = dd.from_pandas(ddf, npartitions=64)
     ddf = ddf.persist()
     progress(ddf)
-    
+
     if not dry_run: 
-        console.print('[yellow] Writing output[/yellow]')
+        console.print('[yellow]Writing output[/yellow]')
         ddf_out = dd.to_parquet(
             ddf,
             data_path,
@@ -74,12 +87,9 @@ def main(
             compute=False,
         )
         progress(client.compute(ddf_out))
-        console.print('[green] Finished [/green]')
+        console.print('[green]Finished [/green]')
     else:
-        console.print('[red] Dry Run complete [/red]')
-
-def run_app():
-    app()
+        console.print('[red]Dry Run complete [/red]')
 
 if __name__ == '__main__':
     app()
