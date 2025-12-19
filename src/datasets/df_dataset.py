@@ -18,8 +18,8 @@ class DF_Dataset(Dataset[tuple[Tensor, ...]]):
     def __init__(self, 
                  data_path: str,
                  X: str,
-                 max_len: int,
                  y: str | None = None,
+                 max_len: int = int(1e32),
                  pad_value: int = 0,
                  pad: bool = True,
                  truncate: bool | str = 'drop',
@@ -38,11 +38,15 @@ class DF_Dataset(Dataset[tuple[Tensor, ...]]):
                        self.df.compute() # pyright: ignore[reportUnknownMemberType]
                        ) 
 
+        logger.info(f'{self.df.shape[0]:,}, {self.df.columns}')
+        self.df = self.df.dropna(subset=columns)
+        logger.info(f'{self.df.shape[0]:,}')
         if truncate == 'drop':
-            logger.info(f'Dropping [{X}] vals longer than {max_len}')
-            self.df[f'{X}_len'] = cast(pd.Series, self.df[X].str.len()) # pyright: ignore[reportUnknownMemberType]
+            prev_count = self.df.shape[0]
+            logger.info(f'Dropping [{X}] vals longer than {max_len:,}')
+            self.df[f'{X}_len'] = cast(pd.Series, self.df[X].apply(lambda x : len(x))) # pyright: ignore[reportUnknownMemberType]
             self.df = self.df.loc[~(self.df[f'{X}_len'] > max_len)]
-            logger.info(f'Dropped {sum(self.df[f"{X}_len"] > max_len)} values, {self.df.shape[0]} remaining') # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType]
+            logger.info(f'Dropped {prev_count - self.df.shape[0]:,} values, {self.df.shape[0]:,} remaining') # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType]
         self.X: str = X
         self.Y: str | None = y
 

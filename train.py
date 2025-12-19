@@ -3,10 +3,12 @@
 # pyright: strict
 # basedpyright: reccomend
 from config.config import config
+from src.types.valid_paths import VALID_PATHS
 from src.utils.logging import setup_logger
 from src.metric_trackers.classification_tracker import ClassificationTracker
 from src.datasets.df_dataset import DF_Dataset
 
+from typing import Literal, Annotated, TypeAlias
 from sklearn.metrics import roc_auc_score # pyright: ignore[reportMissingTypeStubs, reportUnknownVariableType]
 from concurrent.futures import ThreadPoolExecutor
 
@@ -20,6 +22,7 @@ from logging import getLogger
 
 logger = getLogger(Path(__file__).stem)
 _ = setup_logger(logger, config.logging)
+ 
 app = typer.Typer()
 
 def init_dataloader(dataset: Dataset[tuple[Tensor, ...]]) -> DataLoader[tuple[Tensor, ...]]:
@@ -33,16 +36,16 @@ def eval_model(model) -> None:
 
 @app.command()
 def main(
-    data_path: str = typer.Argument(
+    data_path: VALID_PATHS = typer.Argument( 
         help='data path relative to config.data.staged'
     )
 ) -> None:
     dataset = DF_Dataset(
-        str(config.data.staged / data_path),
-        'abstract_tokens',
-        1000,
+        data_path=str(config.data.staged / data_path),
+        X='abstract_tokens',
+        max_len=4000,
     )
-    
+     
     return
 
 if __name__ == '__main__':
