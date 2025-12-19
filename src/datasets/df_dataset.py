@@ -14,12 +14,12 @@ logger = getLogger(Path(__file__).stem)
 _ = setup_logger(logger, config.logging)
 console = Console()
 
-class DF_DataLoader(Dataset[tuple[Tensor, ...]]):
+class DF_Dataset(Dataset[tuple[Tensor, ...]]):
     def __init__(self, 
                  data_path: str,
                  X: str,
-                 y: str | None,
                  max_len: int,
+                 y: str | None = None,
                  pad_value: int = 0,
                  pad: bool = True,
                  truncate: bool | str = 'drop',
@@ -31,13 +31,18 @@ class DF_DataLoader(Dataset[tuple[Tensor, ...]]):
         else:
             columns = list(set([X, y]))
 
-        self.df: pd.DataFrame = cast(pd.DataFrame, dd.read_parquet(data_path, columns=columns).compute()) # pyright: ignore[reportPrivateImportUsage, reportUnknownMemberType]
-        
-        if truncate == 'drop':
-            logger.info(console.print(f'[red]Dropping {X} vals longer than {max_len}[/red]'))
-            self.df[f'{X}_len'] = cast(pd.Series, self.df[X].str.len()) # pyright: ignore[reportUnknownMemberType]
-            self.df = self.df.loc[~(self.df[f'{X}_len'] > max_len), :]
+        self.df: pd.DataFrame = cast(pd.DataFrame, 
+                                     dd.read_parquet(data_path, columns=columns, engine='fastparquet') # pyright: ignore[reportPrivateImportUsage, reportUnknownMemberType]
+                                     ) 
+        self.df = cast(pd.DataFrame, 
+                       self.df.compute() # pyright: ignore[reportUnknownMemberType]
+                       ) 
 
+        if truncate == 'drop':
+            logger.info(f'Dropping [{X}] vals longer than {max_len}')
+            self.df[f'{X}_len'] = cast(pd.Series, self.df[X].str.len()) # pyright: ignore[reportUnknownMemberType]
+            self.df = self.df.loc[~(self.df[f'{X}_len'] > max_len)]
+            logger.info(f'Dropped {sum(self.df[f"{X}_len"] > max_len)} values, {self.df.shape[0]} remaining') # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType]
         self.X: str = X
         self.Y: str | None = y
 
@@ -45,6 +50,9 @@ class DF_DataLoader(Dataset[tuple[Tensor, ...]]):
         self.TRUNCATE: bool | str = truncate
         self.MAX_LEN: int = max_len
         self.PAD_VALUE: int = pad_value
+
+    def __len__(self) -> int:
+        return self.df.shape[0]
 
     @override
     def __getitem__(self, idx: int) -> tuple[Tensor, ...]:

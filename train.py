@@ -1,9 +1,11 @@
+#!/usr/bin/env python3
 # train.py
 # pyright: strict
-# ruff: strict
+# basedpyright: reccomend
 from config.config import config
 from src.utils.logging import setup_logger
 from src.metric_trackers.classification_tracker import ClassificationTracker
+from src.datasets.df_dataset import DF_Dataset
 
 from sklearn.metrics import roc_auc_score # pyright: ignore[reportMissingTypeStubs, reportUnknownVariableType]
 from concurrent.futures import ThreadPoolExecutor
@@ -12,11 +14,13 @@ import torch
 from torch import Tensor
 from torch.utils.data import Dataset, DataLoader
 
+import typer
 from pathlib import Path
 from logging import getLogger
 
 logger = getLogger(Path(__file__).stem)
 _ = setup_logger(logger, config.logging)
+app = typer.Typer()
 
 def init_dataloader(dataset: Dataset[tuple[Tensor, ...]]) -> DataLoader[tuple[Tensor, ...]]:
     dataloader = DataLoader(
@@ -27,10 +31,23 @@ def init_dataloader(dataset: Dataset[tuple[Tensor, ...]]) -> DataLoader[tuple[Te
 def eval_model(model) -> None:
     return
 
-def main() -> None:
+@app.command()
+def main(
+    data_path: str = typer.Argument(
+        help='data path relative to config.data.staged'
+    )
+) -> None:
+    dataset = DF_Dataset(
+        str(config.data.staged / data_path),
+        'abstract_tokens',
+        1000,
+    )
+    
     return
 
 if __name__ == '__main__':
+    app()
+    '''
     logger.info('Starting test')
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     device = torch.device(device)
@@ -57,3 +74,4 @@ if __name__ == '__main__':
     metric_tracker._log_metric('train roc_auc', roc_auc, 1)
     report = metric_tracker.report()
     print(report)
+    '''
