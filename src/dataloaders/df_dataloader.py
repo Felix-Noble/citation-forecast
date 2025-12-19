@@ -35,14 +35,14 @@ class DF_DataLoader(Dataset[tuple[Tensor, ...]]):
         
         if truncate == 'drop':
             logger.info(console.print(f'[red]Dropping {X} vals longer than {max_len}[/red]'))
-            self.df[f'{X}_len']: pd.Series = self.df[X].apply(lambda x : len(x))
-            self.df: pd.DataFrame = self.df[~self.df[f'{X}_len'] > max_len]
+            self.df[f'{X}_len'] = cast(pd.Series, self.df[X].str.len()) # pyright: ignore[reportUnknownMemberType]
+            self.df = self.df.loc[~(self.df[f'{X}_len'] > max_len), :]
 
         self.X: str = X
         self.Y: str | None = y
 
         self.PAD: bool = pad
-        self.TRUNCATE: bool = truncate
+        self.TRUNCATE: bool | str = truncate
         self.MAX_LEN: int = max_len
         self.PAD_VALUE: int = pad_value
 
@@ -53,7 +53,7 @@ class DF_DataLoader(Dataset[tuple[Tensor, ...]]):
        
         if self.PAD & x.size(0) < self.MAX_LEN:
             x = nn.functional.pad(x, (0, self.MAX_LEN - x.size(0)), value=self.PAD_VALUE)
-        if self.TRUNCATE & x.size(0) > self.MAX_LEN:
+        if self.TRUNCATE == True & x.size(0) > self.MAX_LEN:
             x = x[:self.MAX_LEN]
         
         if self.Y is not None:
