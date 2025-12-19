@@ -1,16 +1,34 @@
+# train.py
+# pyright: strict
+# ruff: strict
 from config.config import config
 from src.utils.logging import setup_logger
 from src.metric_trackers.classification_tracker import ClassificationTracker
 
 from sklearn.metrics import roc_auc_score # pyright: ignore[reportMissingTypeStubs, reportUnknownVariableType]
+from concurrent.futures import ThreadPoolExecutor
+
 import torch
+from torch import Tensor
+from torch.utils.data import Dataset, DataLoader
 
 from pathlib import Path
 from logging import getLogger
 
-
 logger = getLogger(Path(__file__).stem)
 _ = setup_logger(logger, config.logging)
+
+def init_dataloader(dataset: Dataset[tuple[Tensor, ...]]) -> DataLoader[tuple[Tensor, ...]]:
+    dataloader = DataLoader(
+        dataset
+    )
+    return dataloader
+
+def eval_model(model) -> None:
+    return
+
+def main() -> None:
+    return
 
 if __name__ == '__main__':
     logger.info('Starting test')
