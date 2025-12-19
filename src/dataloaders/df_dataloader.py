@@ -4,6 +4,15 @@ import torch.nn as nn
 from torch import Tensor
 from torch.utils.data import Dataset
 from typing import cast, override
+from rich.console import Console
+
+from config.config import config
+from src.utils.logging import setup_logger
+from pathlib import Path
+from logging import getLogger
+logger = getLogger(Path(__file__).stem)
+_ = setup_logger(logger, config.logging)
+console = Console()
 
 class DF_DataLoader(Dataset[tuple[Tensor, ...]]):
     def __init__(self, 
@@ -13,7 +22,7 @@ class DF_DataLoader(Dataset[tuple[Tensor, ...]]):
                  max_len: int,
                  pad_value: int = 0,
                  pad: bool = True,
-                 truncate: bool = True,
+                 truncate: bool | str = 'drop',
                  ):
         super().__init__()
 
@@ -23,6 +32,12 @@ class DF_DataLoader(Dataset[tuple[Tensor, ...]]):
             columns = list(set([X, y]))
 
         self.df: pd.DataFrame = cast(pd.DataFrame, dd.read_parquet(data_path, columns=columns).compute()) # pyright: ignore[reportPrivateImportUsage, reportUnknownMemberType]
+        
+        if truncate == 'drop':
+            logger.info(console.print(f'[red]Dropping {X} vals longer than {max_len}[/red]'))
+            self.df[f'{X}_len']: pd.Series = self.df[X].apply(lambda x : len(x))
+            self.df: pd.DataFrame = self.df[~self.df[f'{X}_len'] > max_len]
+
         self.X: str = X
         self.Y: str | None = y
 

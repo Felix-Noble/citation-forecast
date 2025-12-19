@@ -50,8 +50,8 @@ def main(
         engine='fastparquet'
     )
     ddf = ddf.dropna(subset=columns)
-
     for col in columns:
+        ddf[col] = tokenizer.bos_token + ddf[col] + tokenizer.eos_token 
         console.print(f'Tokenising [green]{col}[/green]')
         ddf[f'{col}_tokens'] = ddf[col].map_partitions(
                                             tokenize_partition, 
@@ -77,6 +77,9 @@ def main(
         console.print('[green] Finished [/green]')
     else:
         console.print('[red] Dry Run complete [/red]')
+
+def run_app():
+    app()
 
 if __name__ == '__main__':
     app()
