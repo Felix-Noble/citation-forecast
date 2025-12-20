@@ -9,6 +9,7 @@ class ModelConfig:
 class DataConfig:
     raw: Path = Path('/home/fnoble/data/OpenAlex-parquet/')
     staged: Path = Path('/home/fnoble/data/staged/')
+    batch_size: int = 2
 
 @dataclass(frozen=True)
 class LogConfig:
