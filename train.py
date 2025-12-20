@@ -28,14 +28,8 @@ app = typer.Typer()
 
 def init_dataloader(
     dataset: Dataset[tuple[Tensor, ...] | Tensor],
-    device: torch.device,
     data_config: DataConfig = config.data,
 ) -> DataLoader[tuple[Tensor, ...] | Tensor]:
-
-    def collate_fn(batch: torch.Tensor | tuple[Tensor, ...]):
-        if isinstance(batch, tuple):
-            return (torch.stack(tensor).to(device) for tensor in batch)
-        return torch.stack(batch).to(device)
 
     dataloader = DataLoader(
         dataset,
@@ -43,7 +37,7 @@ def init_dataloader(
         num_workers=1,
         prefetch_factor=None,
         pin_memory=True,
-        collate_fn=collate_fn,
+        shuffle=True,
     )
     return dataloader
 
@@ -57,7 +51,7 @@ def main(
     )
 ) -> None:
     " Main Loop "
-    device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
+    device: torch.device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
     logger.info(f'Running on {device}')
 
     dataset = DF_Dataset(
@@ -67,14 +61,39 @@ def main(
         pad=True,
         pad_value=0
     )
-    dataloader = init_dataloader(dataset, device)
-    model = nn.Linear(dataset.MAX_LEN, 1) 
+    dataloader = init_dataloader(dataset)
+    dataloader_iter = iter(dataloader)
+    compute_stream = torch.cuda.Stream()
+    copy_stream = torch.cuda.Stream()
+    forward_finished = torch.cuda.Event()
+    copy_finished = torch.cuda.Event()
 
-    for X in dataloader:
-        logger.debug(f'X device {X.device}')
-        out = model(X)
-        logger.debug(f'out device {out.device}')
-        quit()
+    model = nn.Linear(dataset.MAX_LEN, 1, device=device) 
+
+    with torch.cuda.stream(copy_stream):
+        current_X = next(dataloader_iter).to(device, non_blocking=True)
+        copy_finished.record()
+
+    i=0
+    for next_X in dataloader_iter:
+        with torch.cuda.stream(compute_stream):
+            copy_finished.wait()
+            out = model(current_X)
+            forward_finished.record()
+
+        with torch.cuda.stream(copy_stream):
+            next_X = next_X.to(device, non_blocking=True)
+            copy_finished.record()
+            forward_finished.wait()
+            current_X = next_X
+
+        print('current/next\n', current_X, '\n', next_X) 
+        logger.debug(f'X details {current_X.device}, {current_X.shape}')
+
+        i+= 1
+        print(out.shape)
+        if i > 3: 
+            break
     return
 
 if __name__ == '__main__':
