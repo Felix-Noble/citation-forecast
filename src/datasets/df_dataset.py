@@ -1,5 +1,6 @@
 import dask.dataframe as dd
 import pandas as pd # pyright: ignore[reportMissingTypeStubs] 
+import torch
 import torch.nn as nn
 from torch import Tensor
 from torch.utils.data import Dataset
@@ -37,6 +38,7 @@ class DF_Dataset(Dataset[tuple[Tensor, ...]]):
         self.df = cast(pd.DataFrame, 
                        self.df.compute() # pyright: ignore[reportUnknownMemberType]
                        ) 
+        self.df.reset_index(drop=True, inplace=True) 
 
         logger.info(f'{self.df.shape[0]:,}, {self.df.columns}')
         self.df = self.df.dropna(subset=columns)
@@ -60,9 +62,8 @@ class DF_Dataset(Dataset[tuple[Tensor, ...]]):
 
     @override
     def __getitem__(self, idx: int) -> tuple[Tensor, ...]:
-         
         x = Tensor(self.df.loc[idx, self.X])
-       
+
         if self.PAD & x.size(0) < self.MAX_LEN:
             x = nn.functional.pad(x, (0, self.MAX_LEN - x.size(0)), value=self.PAD_VALUE)
         if self.TRUNCATE == True & x.size(0) > self.MAX_LEN:
@@ -70,6 +71,6 @@ class DF_Dataset(Dataset[tuple[Tensor, ...]]):
         
         if self.Y is not None:
             y = Tensor(self.df.loc[idx, self.Y])
-            return (x, y)
-        
-        return (x,)
+            return x, y
+
+        return x
