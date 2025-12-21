@@ -1,4 +1,5 @@
 from typing import Callable, NamedTuple
+import pandas as pd
 from rich.table import Table
 from rich.console import Console
 from sklearn.metrics import roc_auc_score # pyright: ignore[reportUnknownVariableType, reportMissingTypeStubs] 
@@ -30,35 +31,44 @@ class ClassificationTracker:
                  device: torch.device,
                  ):
         self.output_shape: tuple[int, ...] = output_shape
+        self.output_buffer_size: int = output_buffer_size 
+        self.output_store_size: int = output_store_size
         self.device: torch.device = device
 
-        self.buffer_cursor: torch.Tensor = torch.tensor(0, device=self.device, dtype=torch.int32)
-        self.output_buffer_size: torch.Tensor = torch.tensor(output_buffer_size, device=self.device, dtype=torch.int32)
-
-        self.output_store_size: int = output_store_size
-        self.output_store_cursor: int = 0
-       
-        # metric store/df
         self.metric_store: dict[str, list[MetricTuple]] = {}
-        self.metric_df: pl.DataFrame = pl.DataFrame()
+        self.metric_df: pd.DataFrame = pd.DataFrame()
         #self.y_true: torch.Tensor = torch.tensor(False)
 
         # rich console 
         self.console: Console = Console()
 
         # Ouptut buffers 
-        self.output_buffer: torch.Tensor = torch.empty((output_buffer_size, *output_shape))
-        self.output_store: list[torch.Tensor] = [] 
-            
-        # GPU stream (distinct from main stream)
-        self.stream:torch.cuda.Stream = torch.cuda.Stream()
+        self._init_buffer()
+        self._init_store()
+
+        # Cursors
+        self._init_cursors()    
 
         self.store_output: Callable[[torch.Tensor], None]
         # select store_output method 
         if output_buffer_size >= n_examples:
-            self.store_output = self._store_output_fast 
+            # TODO: add logging
+            self.store_output = self._store_output_fast
         else:
-            self.store_output = self._store_output_cpu 
+            self.store_output = self._store_output_cpu
+
+    def _init_buffer(self) -> None:
+         self.output_buffer: torch.Tensor = torch.empty((self.output_buffer_size, *self.output_shape))
+    def _init_store(self) -> None:
+        self.output_store: list[torch.Tensor] = []       
+    def _init_cursors(self) -> None:
+        self.buffer_cursor: torch.Tensor = torch.tensor(0, device=self.device, dtype=torch.int32)
+        self.output_store_cursor: int = 0
+
+    def clear(self) -> None:
+        self._init_buffer()
+        self._init_store()
+        self._init_cursors()
 
     def _flush_buffer(self) -> None:
         " Flushed bufffer to CPU, resets cursor"
@@ -67,10 +77,16 @@ class ClassificationTracker:
         _ = self.buffer_cursor.fill_(0)
         self.output_store_cursor += self.output_store[-1].size(0)
 
-    def _stack_buffer(self) -> torch.Tensor:
-        " Stack buffer in place"
-        n_batches, batch_size, n_out = self.output_buffer.shape 
-        return self.output_buffer.view(n_batches * batch_size, n_out)
+    def _store_output_factory(self,
+                              func: Callable[[torch.Tensor], None],
+                              ) -> Callable[[torch.Tensor], None]:
+        def _store_output(output: torch.Tensor) -> None:
+            with self.stream:
+                self.event_wait.wait()
+                func(output)
+                self.event_record.record()
+
+        return _store_output
 
     def _store_output_fast(self, output: torch.Tensor) -> None:
         " Stores outputs in buffer only "
