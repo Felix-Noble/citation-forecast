@@ -1,33 +1,45 @@
-from typing import cast, NamedTuple
 import torch.nn as nn
 import importlib
+import inspect
+from pathlib import Path
 
-class RegistryEntry(NamedTuple):
-    module_path: str 
-    model_class: str
+def build_registry() -> dict:
+    current_path = Path(__file__)
+    module_names = [str(f.stem) for f in Path(__file__).parent.glob('*.py') if f != current_path]
+
+    registry = {}
+    for module_name in module_names:
+        module = importlib.import_module(str(module_name))
+
+        components = [clss for name,clss in inspect.getmembers(module, inspect.isclass) if hasattr(clss, 'MODEL_NAME')]
+        if len(components) > 1:
+            raise ValueError (f'Found two classes in {module_name} Only one class per "model" module expected')
+        if not components:
+            raise ValueError(f"No valid classes found in '{module_name}', ensure all model classes have 'MODEL_NAME' attribute")
+        model = components[0]
+        model_name = getattr(model, 'MODEL_NAME')
+        
+        registry[model_name] = model
+    
+        return registry
 
 def get_model(model_name: str) -> type[nn.Module]:
     model_name = model_name.lower()
-    name_registry = {
+    alias_registry = {
         'r_rnn' : ['real_rnn', 'real_recurrentnn']
     }
 
-    for name, alts in name_registry.items():
+    for name, alts in alias_registry.items():
         if model_name in alts:
             model_name = name
             break
 
-    registry: dict[str, RegistryEntry] = {
-        'r_rnn': RegistryEntry('src.models.real_rnn', 'R_RNN'),
-    }
-    
+    registry: dict = build_registry()
     if model_name not in registry.keys():
         raise KeyError(f'Model "{model_name}" name not registered, check model registry')
-
-    model_registry = registry[model_name]
-
-    module = importlib.import_module(model_registry.module_path)
-    model = cast(type[nn.Module], getattr(module, model_registry.model_class))
-    if not issubclass(model, nn.Module): # pyright: ignore[reportUnnecessaryIsInstance]
-        raise TypeError(f'Module [{model_registry.module_path}] exports model [{model_registry.model_class}] not subclass of torch.nn.Module')
+    model = registry[model_name]
     return model 
+
+if __name__ == '__main__':
+    model=get_model('r_rnn')
+    print(model)

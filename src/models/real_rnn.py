@@ -4,13 +4,10 @@ import torch
 import torch.nn as nn
 from torch import Tensor
 
-@dataclass
-class ModelConfig:
-    n_layers: int
-
 class R_RNN(nn.Module):
+    MODEL_NAME = 'r_rnn'
     def __init__(self, 
-                 config: ModelConfig,
+                 config,
                  device: torch.device,
                  dtype: torch.dtype
                  ):
