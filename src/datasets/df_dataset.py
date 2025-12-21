@@ -1,7 +1,7 @@
 import dask.dataframe as dd
-import pandas as pd # pyright: ignore[reportMissingTypeStubs] 
-import torch
+import pandas as pd  
 import torch.nn as nn
+import torch
 from torch import Tensor
 from torch.utils.data import Dataset
 from typing import cast, override
@@ -38,17 +38,23 @@ class DF_Dataset(Dataset[tuple[Tensor, ...]]):
         self.df = cast(pd.DataFrame, 
                        self.df.compute() # pyright: ignore[reportUnknownMemberType]
                        ) 
+
+        prev_n = self.df.shape[0]
+        self.df = self.df.dropna(subset=X)
+        logger.info(f"Dropped {prev_n - self.df.shape[0]} missing '{X}' rows")
+        if y is not None:
+            prev_n = self.df.shape[0]
+            self.df = self.df.dropna(subset=y)
+            logger.info(f"Dropped {prev_n - self.df.shape[0]} missing '{y}' rows")
+        
+        if truncate == 'drop':
+            prev_n = self.df.shape[0]
+            self.df[f'{X}_len'] =  self.df[X].apply(lambda x : len(x))# pyright: ignore[reportUnknownMemberType]
+            self.df = self.df.loc[(self.df[f'{X}_len'] <= max_len), columns]
+            logger.info(f"Dropped {prev_n - self.df.shape[0]:,} '{X}' len > {max_len:,} | {self.df.shape[0]:,} remaining") # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType]
+
         self.df.reset_index(drop=True, inplace=True) 
 
-        logger.info(f'{self.df.shape[0]:,}, {self.df.columns}')
-        self.df = self.df.dropna(subset=columns)
-        logger.info(f'{self.df.shape[0]:,}')
-        if truncate == 'drop':
-            prev_count = self.df.shape[0]
-            logger.info(f'Dropping [{X}] vals longer than {max_len:,}')
-            self.df[f'{X}_len'] = cast(pd.Series, self.df[X].apply(lambda x : len(x))) # pyright: ignore[reportUnknownMemberType]
-            self.df = self.df.loc[~(self.df[f'{X}_len'] > max_len)]
-            logger.info(f'Dropped {prev_count - self.df.shape[0]:,} values, {self.df.shape[0]:,} remaining') # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType]
         self.X: str = X
         self.Y: str | None = y
 
@@ -60,17 +66,24 @@ class DF_Dataset(Dataset[tuple[Tensor, ...]]):
     def __len__(self) -> int:
         return self.df.shape[0]
 
+    def _format_X(self, x: Tensor) -> Tensor:
+        return x
+
+    def _format_y(self, y: Tensor) -> Tensor:
+        return y
+
     @override
     def __getitem__(self, idx: int) -> tuple[Tensor, ...]:
-        x = Tensor(self.df.loc[idx, self.X])
+        x: Tensor = torch.tensor(self.df.loc[idx, self.X], dtype=torch.float32)
 
         if self.PAD & x.size(0) < self.MAX_LEN:
             x = nn.functional.pad(x, (0, self.MAX_LEN - x.size(0)), value=self.PAD_VALUE)
         if self.TRUNCATE == True & x.size(0) > self.MAX_LEN:
             x = x[:self.MAX_LEN]
-        
+       
+        x = self._format_X(x)
         if self.Y is not None:
-            y = Tensor(self.df.loc[idx, self.Y])
-            return x, y
+            y = torch.tensor(self.df.loc[idx, self.Y], dtype=torch.float32)
+            return x, self._format_y(y)
 
-        return x
+        return x, torch.tensor(float('nan'), dtype=torch.float32)
