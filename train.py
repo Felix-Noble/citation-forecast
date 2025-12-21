@@ -2,13 +2,11 @@
 # train.py
 # pyright: strict
 # basedpyright: reccomend
-from config.config import config, DataConfig
+from config.config import config, Config
 from src.types.valid_paths import VALID_PATHS
 from src.utils.logging import setup_logger
 from src.metric_trackers.classification_tracker import ClassificationTracker
 from src.datasets.df_dataset import DF_Dataset
-
-from typing import Literal
 from sklearn.metrics import roc_auc_score # pyright: ignore[reportMissingTypeStubs, reportUnknownVariableType]
 from concurrent.futures import ThreadPoolExecutor
 
@@ -28,12 +26,12 @@ app = typer.Typer()
 
 def init_dataloader(
     dataset: Dataset[tuple[Tensor, ...] | Tensor],
-    data_config: DataConfig = config.data,
+    config: Config = config,
 ) -> DataLoader[tuple[Tensor, ...] | Tensor]:
 
     dataloader = DataLoader(
         dataset,
-        batch_size=data_config.batch_size,
+        batch_size=config.train.batch_size,
         num_workers=1,
         prefetch_factor=None,
         pin_memory=True,
@@ -62,39 +60,56 @@ def main(
         pad_value=0
     )
     dataloader = init_dataloader(dataset)
-    dataloader_iter = iter(dataloader)
+    model = nn.Linear(
+        dataset.MAX_LEN, 1, device=device
+    ) 
+    metric_tracker = ClassificationTracker(
+        output_shape=(config.train.batch_size, 1), 
+        output_buffer_size=10, 
+        output_store_size=10, 
+        n_examples=10, 
+        dtype=torch.float32,
+        device=device,
+    )
+
     compute_stream = torch.cuda.Stream()
     copy_stream = torch.cuda.Stream()
     forward_finished = torch.cuda.Event()
-    copy_finished = torch.cuda.Event()
+    batch_copy_finished = torch.cuda.Event()
+    output_copy_finished = torch.cuda.Event()
 
-    model = nn.Linear(dataset.MAX_LEN, 1, device=device) 
-
-    with torch.cuda.stream(copy_stream):
-        current_X = next(dataloader_iter).to(device, non_blocking=True)
-        copy_finished.record()
-
-    i=0
-    for next_X in dataloader_iter:
-        with torch.cuda.stream(compute_stream):
-            copy_finished.wait()
-            out = model(current_X)
-            forward_finished.record()
-
+    for epoch in range(1, config.train.epochs + 1):
+        iterator = iter(dataloader)
         with torch.cuda.stream(copy_stream):
-            next_X = next_X.to(device, non_blocking=True)
-            copy_finished.record()
-            forward_finished.wait()
-            current_X = next_X
+            current_X = next(iterator).to(device, non_blocking=True)
+            batch_copy_finished.record()
+            output_copy_finished.record()
+        i=0
+        for next_X in iterator:
+            with torch.cuda.stream(compute_stream):
+                output_copy_finished.wait()
+                batch_copy_finished.wait()
+                out = model(current_X)
+                forward_finished.record()
 
-        print('current/next\n', current_X, '\n', next_X) 
-        logger.debug(f'X details {current_X.device}, {current_X.shape}')
+            with torch.cuda.stream(copy_stream):
+                next_X_gpu = next_X.to(device, non_blocking=True)
+                batch_copy_finished.record()
+                forward_finished.wait()
+                metric_tracker.store_output(out)
+                output_copy_finished.record()
+                current_X = next_X_gpu
 
-        i+= 1
-        print(out.shape)
-        if i > 3: 
-            break
-    return
+            i+= 1
+            if i > 9: 
+                break
+        
+        probs = torch.softmax(
+                torch.flatten(metric_tracker.output_buffer, end_dim=2),
+                dim=1,
+        )
+
+        metric_tracker.clear()
 
 if __name__ == '__main__':
     app()
