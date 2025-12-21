@@ -77,39 +77,26 @@ class ClassificationTracker:
         _ = self.buffer_cursor.fill_(0)
         self.output_store_cursor += self.output_store[-1].size(0)
 
-    def _store_output_factory(self,
-                              func: Callable[[torch.Tensor], None],
-                              ) -> Callable[[torch.Tensor], None]:
-        def _store_output(output: torch.Tensor) -> None:
-            with self.stream:
-                self.event_wait.wait()
-                func(output)
-                self.event_record.record()
-
-        return _store_output
-
     def _store_output_fast(self, output: torch.Tensor) -> None:
         " Stores outputs in buffer only "
-        with torch.cuda.stream(self.stream):
-            #test = output.detach()
-            self.output_buffer[self.buffer_cursor] = output.detach()
-            _ = self.buffer_cursor.add_(1)
+        #test = output.detach()
+        self.output_buffer[self.buffer_cursor] = output.detach()
+        _ = self.buffer_cursor.add_(1)
 
     def _store_output_cpu(self, output: torch.Tensor) -> None:
         " Stores outputs in buffer, syncs buffer to CPU when full and flushes, calculates metrics when store full and clears"
-        with torch.cuda.stream(self.stream):
-            buffer_full = self.buffer_cursor >= self.output_buffer_size
+        buffer_full = self.buffer_cursor >= self.output_buffer_size
 
-            if buffer_full:
-                self._flush_buffer()
+        if buffer_full:
+            self._flush_buffer()
 
-            self.output_buffer[self.buffer_cursor] = output.detach()
-            _ = self.buffer_cursor.add_(1)
-            
-            store_full = self.output_store_cursor >= self.output_store_size
+        self.output_buffer[self.buffer_cursor] = output.detach()
+        _ = self.buffer_cursor.add_(1)
+        
+        store_full = self.output_store_cursor >= self.output_store_size
 
-            if store_full:
-                pass
+        if store_full:
+            pass
 
     def calc_metrics(self):
         return ('Function under construction')
