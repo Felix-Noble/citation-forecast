@@ -3,5 +3,4 @@ data/
 logs/
 openai/
 types/
-build/
 testing/
