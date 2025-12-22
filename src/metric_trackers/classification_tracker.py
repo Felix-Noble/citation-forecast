@@ -1,9 +1,25 @@
 from typing import Callable, NamedTuple
+from dataclasses import dataclass
 import pandas as pd
 from rich.table import Table
 from rich.console import Console
 from sklearn.metrics import roc_auc_score # pyright: ignore[reportUnknownVariableType, reportMissingTypeStubs] 
 import torch
+
+class StoreParams(NamedTuple):
+    name: str
+    batch_shape: tuple[int, ...]
+    n_batches: int
+    max_store: int
+    n_examples: int
+ 
+@dataclass 
+class Store():
+    name: str
+    buffer: torch.Tensor
+    store: list[torch.Tensor]
+    buffer_cursor: torch.Tensor
+    store_cursor: int
 
 class MetricTuple(NamedTuple):
     " Metric Tuple: stores named metric scores / weight values for dataframe concatenations"
@@ -23,103 +39,75 @@ class ClassificationTracker:
 
     """
     def __init__(self,
-                 output_shape: tuple[int, ...],
-                 output_buffer_size: int,
-                 output_store_size: int,
-                 n_examples: int,
-                 dtype: torch.dtype,
-                 device: torch.device,
+                store_params: list[StoreParams],
+                dtype: torch.dtype,
+                device: torch.device,
                  ):
-        self.output_shape: tuple[int, ...] = output_shape
-        self.output_buffer_size: int = output_buffer_size 
-        self.output_store_size: int = output_store_size
+
+        self.dtype = dtype
         self.device: torch.device = device
+        self.store_params: dict[str, StoreParams] = {params.name: params for params in store_params}
+        self.stores: dict[str, Store] = {params.name: self._init_store(params) for params in store_params}
 
         self.metric_store: dict[str, list[MetricTuple]] = {}
         self.metric_df: pd.DataFrame = pd.DataFrame()
-        #self.y_true: torch.Tensor = torch.tensor(False)
 
         # rich console 
         self.console: Console = Console()
 
-        # Ouptut buffers 
-        self._init_buffer()
-        self._init_store()
-
-        # Cursors
-        self._init_cursors()    
-
-        self.store_output: Callable[[torch.Tensor], None]
-        # select store_output method 
-        if output_buffer_size >= n_examples:
-            # TODO: add logging
-            self.store_output = self._store_output_fast
-        else:
-            self.store_output = self._store_output_cpu
-
-    def _init_buffer(self) -> None:
-         self.output_buffer: torch.Tensor = torch.empty((self.output_buffer_size, *self.output_shape))
-    def _init_store(self) -> None:
-        self.output_store: list[torch.Tensor] = []       
-    def _init_cursors(self) -> None:
-        self.buffer_cursor: torch.Tensor = torch.tensor(0, device=self.device, dtype=torch.int32)
-        self.output_store_cursor: int = 0
+    def _init_store(self, params: StoreParams) -> Store:
+        return Store(
+            name=params.name,
+            buffer=torch.empty((params.n_batches, *params.batch_shape), dtype=self.dtype, device=self.device),
+            store=[],
+            buffer_cursor=torch.tensor(0, dtype=torch.int32, device=self.device),
+            store_cursor=0,
+        )
+    def _reset_store(self, store: Store) -> Store:
+        self.stores[store.name] = self._init_store(self.store_params[store.name])
+        return self.stores[store.name]
 
     def clear(self) -> None:
-        self._init_buffer()
-        self._init_store()
-        self._init_cursors()
-
-    def _flush_buffer(self) -> None:
+        for store in self.stores.values():
+            _ = self._reset_store(store)
+            
+    def _flush_buffer(self, store: Store) -> None:
         " Flushed bufffer to CPU, resets cursor"
-        self.output_store.append(self.output_buffer.cpu())
-        self.output_buffer = torch.empty_like(self.output_buffer)
-        _ = self.buffer_cursor.fill_(0)
-        self.output_store_cursor += self.output_store[-1].size(0)
+        store.store.append(store.buffer.cpu())
+        store.buffer = torch.empty_like(store.buffer)
+        store.buffer_cursor = torch.zeros_like(store.buffer_cursor)
+        store.store_cursor += store.store[-1].size(0)
 
-    def _store_output_fast(self, output: torch.Tensor) -> None:
-        " Stores outputs in buffer only "
-        #test = output.detach()
-        self.output_buffer[self.buffer_cursor] = output.detach()
-        _ = self.buffer_cursor.add_(1)
+    def _write_buffer(self, value: torch.Tensor, store: Store) -> None:
+        " Writes value to store buffer "
+        store.buffer[store.buffer_cursor] = value.detach()
+        store.buffer_cursor.add_(1)
 
-    def _store_output_cpu(self, output: torch.Tensor) -> None:
+    def process_value(self, value: torch.Tensor, store: Store) -> None:
         " Stores outputs in buffer, syncs buffer to CPU when full and flushes, calculates metrics when store full and clears"
-        buffer_full = self.buffer_cursor >= self.output_buffer_size
-
+        buffer_full = store.buffer_cursor >= store.buffer.size(0) 
         if buffer_full:
-            self._flush_buffer()
+            _ = self._flush_buffer(store)
+        _ = self._write_buffer(value, store)
 
-        self.output_buffer[self.buffer_cursor] = output.detach()
-        _ = self.buffer_cursor.add_(1)
-        
-        store_full = self.output_store_cursor >= self.output_store_size
+    def _gather_store(self, store: Store) -> torch.Tensor:
+        """Concatenates and flattens all stored buffers 
 
-        if store_full:
-            pass
+        out shape: (batch, *output_shape)
+        """
+        _ = self._flush_buffer(store)
 
-    def calc_metrics(self):
-        return ('Function under construction')
-        if not self.y_true:
-            raise ValueError('Y True attribute has not been set, set tracker.y_true before calling _calc_metrics')
+        all_values: torch.Tensor = torch.concatenate(store.store, dim=0)
+        self._reset_store(store)
+        return all_values.flatten(end_dim=1)
 
-        _ = self._flush_buffer()
-
-        outputs: torch.Tensor = torch.concatenate(self.output_store, dim=0)
-        self.output_store.clear()
-
-        self.roc_auc.append(
-            { 'score': float(roc_auc_score( # pyright: ignore[reportUnknownArgumentType]
-                                           self.y_true, 
-                                           outputs,
-                                           average = 'macro',
-                                           )),
-             'weight': float(outputs.size(0))
-             }
+    def _calc_roc_auc(self, logits: torch.Tensor, y_true: torch.Tensor):
+        probs = torch.softmax(
+                torch.flatten(logits, end_dim=1),
+                dim=1,
         )
-
-        del outputs
-        self.y_true = torch.tensor(False)
+        score = roc_auc_score(y_true, probs, multi_class='ovo', average='weighted') 
+        return score
 
     def _log_metric(self,
                     name: str,
@@ -130,11 +118,16 @@ class ClassificationTracker:
             self.metric_store[name] = []
         self.metric_store[name].append(MetricTuple(value, weight))
 
+    def process(self):
+        outputs, y_true = self._gather_store()
+        roc_auc = self._calc_roc_auc(outputs, y_true)
+        self._log_metric('roc_auc', roc_auc, 1)
+
     def _aggregate_metrics(self) -> dict[str, float]:
         " Aggregates metrics stored as named tuples "
         aggregate_metrics = {k: float('nan') for k in self.metric_store.keys()} 
         for metric in aggregate_metrics.keys():
-            df: pl.DataFrame = pl.DataFrame(self.metric_store[metric])
+            df: pd.DataFrame = pd.DataFrame(self.metric_store[metric])
             score: float = (df['score'] * df['weight']).sum() / (df['weight'].sum())
             aggregate_metrics[metric] = score
 
