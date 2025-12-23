@@ -24,6 +24,7 @@ class DF_Dataset(Dataset[tuple[Tensor, ...]]):
                  pad_value: int = 0,
                  pad: bool = True,
                  truncate: bool | str = 'drop',
+                 testing: bool = False,
                  ):
         super().__init__()
 
@@ -53,6 +54,8 @@ class DF_Dataset(Dataset[tuple[Tensor, ...]]):
             self.df = self.df.loc[(self.df[f'{X}_len'] <= max_len), columns]
             logger.info(f"Dropped {prev_n - self.df.shape[0]:,} '{X}' len > {max_len:,} | {self.df.shape[0]:,} remaining") # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType]
 
+        if testing:
+            self.df = self.df.sample(n=20_000)
         self.df.reset_index(drop=True, inplace=True) 
 
         self.X: str = X
