@@ -1,15 +1,23 @@
-from typing import Callable, NamedTuple
+from typing import NamedTuple
 from dataclasses import dataclass
 import pandas as pd
 from rich.table import Table
 from rich.console import Console
 from sklearn.metrics import roc_auc_score # pyright: ignore[reportUnknownVariableType, reportMissingTypeStubs] 
 import torch
+from pathlib import Path
+from logging import getLogger
+from src.utils.logging import setup_logger
+from config.config import config
+
+logger = getLogger(Path(__file__).stem)
+_ = setup_logger(logger, config.logging)
 
 class StoreParams(NamedTuple):
     name: str
     batch_shape: tuple[int, ...]
-    n_batches: int
+    buffer_size: int
+    buffer_device: torch.device
     max_store: int
     n_examples: int
  
@@ -39,7 +47,7 @@ class ClassificationTracker:
 
     """
     def __init__(self,
-                store_params: list[StoreParams],
+                store_params: tuple[StoreParams, ...],
                 dtype: torch.dtype,
                 device: torch.device,
                  ):
@@ -58,7 +66,7 @@ class ClassificationTracker:
     def _init_store(self, params: StoreParams) -> Store:
         return Store(
             name=params.name,
-            buffer=torch.empty((params.n_batches, *params.batch_shape), dtype=self.dtype, device=self.device),
+            buffer=torch.empty((params.buffer_size, *params.batch_shape), dtype=self.dtype, device=params.buffer_device),
             store=[],
             buffer_cursor=torch.tensor(0, dtype=torch.int32, device=self.device),
             store_cursor=0,
@@ -83,33 +91,47 @@ class ClassificationTracker:
         store.buffer[store.buffer_cursor] = value.detach()
         store.buffer_cursor.add_(1)
 
-    def process_value(self, value: torch.Tensor, store: Store) -> None:
-        " Stores outputs in buffer, syncs buffer to CPU when full and flushes, calculates metrics when store full and clears"
+    def process_value(self, value: torch.Tensor, store: Store | str) -> None:
+        """Stores outputs in buffer, syncs buffer to CPU when full and flushes, calculates metrics when store full and clears
+            input: 
+                value: Tensor to be stored
+                store: store or name of store
+        """
+        if isinstance(store, str):
+            if store not in self.stores.keys():
+                logger.error(f"Store '{store}' not found ")
+                return 
+            store = self.stores[store]
+
+        if torch.any(torch.isnan(value)):
+            logger.error('NaN values passed to process_value, not writing to buffer')
+            return
+
         buffer_full = store.buffer_cursor >= store.buffer.size(0) 
         if buffer_full:
             _ = self._flush_buffer(store)
         _ = self._write_buffer(value, store)
 
-    def _gather_store(self, store: Store) -> torch.Tensor:
+    def _gather_store(self, 
+                      store: Store | None=None,
+                      store_name: str | None=None,
+                      ) -> torch.Tensor:
         """Concatenates and flattens all stored buffers 
 
         out shape: (batch, *output_shape)
         """
+        if store is None:
+            if store_name is None:
+                logger.error('Store and Store_name are None, cannot gather store, returning NaN tensor')
+                return torch.tensor(float('nan'))
+            store = self.stores[store_name]
         _ = self._flush_buffer(store)
 
         all_values: torch.Tensor = torch.concatenate(store.store, dim=0)
         self._reset_store(store)
         return all_values.flatten(end_dim=1)
 
-    def _calc_roc_auc(self, logits: torch.Tensor, y_true: torch.Tensor):
-        probs = torch.softmax(
-                torch.flatten(logits, end_dim=1),
-                dim=1,
-        )
-        score = roc_auc_score(y_true, probs, multi_class='ovo', average='weighted') 
-        return score
-
-    def _log_metric(self,
+    def log_metric(self,
                     name: str,
                     value: float,
                     weight: float | int,
@@ -118,10 +140,31 @@ class ClassificationTracker:
             self.metric_store[name] = []
         self.metric_store[name].append(MetricTuple(value, weight))
 
-    def process(self):
-        outputs, y_true = self._gather_store()
-        roc_auc = self._calc_roc_auc(outputs, y_true)
-        self._log_metric('roc_auc', roc_auc, 1)
+    def calc_metrics(self, 
+                logit_store_name: str,
+                y_store_name: str,
+                prefix: str = "",
+                ):
+        logits = self._gather_store(store_name=logit_store_name)
+        probs = torch.softmax(
+            logits,
+            dim=1,
+        )
+        y_true = self._gather_store(store_name=y_store_name)
+        shortest_len = logits.size(0) if logits.size(0) < y_true.size(0) else y_true.size(0)
+        logger.debug(f'Before cut: logits: {logits.shape}, y: {y_true.shape}')
+        logits, y_true = logits[:shortest_len], y_true[:shortest_len]
+        logger.debug(f'After cut: logits: {logits.shape}, y: {y_true.shape}')
+        try:
+            roc_auc = roc_auc_score( # pyright: ignore[reportUnknownVariableType]
+                y_true.long().numpy(), 
+                probs.numpy(), 
+                multi_class='ovo', 
+                average='weighted')
+            self.log_metric(f'{prefix}_roc_auc', roc_auc, probs.shape[0]) # pyright: ignore[reportArgumentType]
+        except Exception as e:
+            logger.error(e)
+            return
 
     def _aggregate_metrics(self) -> dict[str, float]:
         " Aggregates metrics stored as named tuples "
@@ -133,18 +176,23 @@ class ClassificationTracker:
 
         return aggregate_metrics 
 
-    def report(self, aggregate_metrics: dict[str, float] | None=None) -> str:
+    def report(self, 
+               progress_bar,
+               epoch: int | None=None, 
+               aggregate_metrics: dict[str, float] | None=None
+               ) -> None:
         " Generates rich.Table, renders as string via capture(), returns"
         if aggregate_metrics is None:
             aggregate_metrics = self._aggregate_metrics()
 
         cols: list[str] = ['cyan', 'green']
-        table: Table = Table(show_header=False, pad_edge=False) 
-        for i, (k, v) in enumerate(aggregate_metrics.items()):
-            table.add_column(style=cols[i % len(cols)])
-            table.add_row(k, str(v)) 
+        table: Table = Table(show_header=True, pad_edge=True, padding=(0,1)) 
+        table.add_column('Epoch', style='cyan')
+        for i, (k) in enumerate(aggregate_metrics.keys()):
+            table.add_column(k, style=cols[i % len(cols)])
 
-        with self.console.capture() as capture:
-            self.console.print(table)
+        row_data = [str(epoch) if epoch is not None else 'NA']
+        row_data.extend(str(v) for v in aggregate_metrics.values())
+        table.add_row(*row_data)
 
-        return capture.get()
+        progress_bar.console.print(table)
