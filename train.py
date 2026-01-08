@@ -1,20 +1,19 @@
 #!/usr/bin/env python3
 # train.py
-# pyright: strict
-# basedpyright: reccomend
-from typing import Iterator
-from config.config import config, Config
+from typing import Iterator, Type
+from config.config import config, Config, MLFLOW_DIR, EXPERIMENT_NAME
 from src.types.valid_paths import VALID_PATHS
 from src.utils.logging import setup_logger
 from src.metric_trackers.classification_tracker import ClassificationTracker
-from src.datasets.df_dataset import DF_Dataset
-from src.datasets.decile_dataset import DecileDataset
+from src.datasets.quartile_dataset import QuartileDataset 
 
 from concurrent.futures import ThreadPoolExecutor
+import mlflow
 import torch
 import torch.nn as nn
 from torch import Tensor
 from torch.utils.data import Dataset, DataLoader
+from concurrent.futures import ThreadPoolExecutor
 from rich.progress import Progress, TextColumn, BarColumn
 import typer
 from pathlib import Path
@@ -39,6 +38,15 @@ def init_dataloader(
         shuffle=True,
     )
     return dataloader
+
+def init_mlflow(
+        model_name: str
+):
+    mlf_client = mlflow.MlflowClient(tracking_uri=f'file://{MLFLOW_DIR}')
+    mlf_experiment = mlflow.set_experiment(EXPERIMENT_NAME)
+    mlf_run = mlflow.start_run(run_name=model_name)
+    mlflow.log_params(config.__dict__)
+    return mlf_client, mlf_experiment, mlf_run
 
 def init_progress() -> tuple[Progress, ...]:
     epoch_progress = Progress(
@@ -73,7 +81,7 @@ def init_mtrack_params(config: Config = config):
     cpu = torch.device('cpu')
     train_logits = StoreParams(
         'train_logits',
-        batch_shape=(config.train.batch_size, 11),
+        batch_shape=(config.train.batch_size, 5),
         buffer_size=4,
         buffer_device=gpu,
         max_store=-1,
@@ -88,14 +96,24 @@ def init_mtrack_params(config: Config = config):
         n_examples=-1,
     )
 
-    val_logits = StoreParams(
-        'val_logits',
-        batch_shape=(config.train.batch_size, 11),
+    train_loss = StoreParams(
+        'train_loss',
+        batch_shape=(config.train.batch_size, ),
         buffer_size=4,
         buffer_device=gpu,
         max_store=-1,
         n_examples=-1,
     )
+
+    val_logits = StoreParams(
+        'val_logits',
+        batch_shape=(config.train.batch_size, 5),
+        buffer_size=4,
+        buffer_device=gpu,
+        max_store=-1,
+        n_examples=-1,
+    )
+
     val_y = StoreParams(
         'val_y',
         batch_shape=(config.train.batch_size, ),
@@ -105,13 +123,44 @@ def init_mtrack_params(config: Config = config):
         n_examples=-1,
     )
 
-    return train_logits, train_y, val_logits, val_y
+    val_loss = StoreParams(
+        'val_loss',
+        batch_shape=(config.train.batch_size, ),
+        buffer_size=4,
+        buffer_device=gpu,
+        max_store=-1,
+        n_examples=-1,
+    )
+    return train_logits, train_y, train_loss, val_logits, val_y, val_loss
+
+def init_loss_fun(config: Config = config):
+    valid_loss_funcs = {
+        'CrossEntropyLoss' : nn.CrossEntropyLoss()
+    } 
+    if config.train.loss_fn not in valid_loss_funcs.keys():
+        raise ValueError(f'Loss Function {config.train.loss_fn} not expected, select from {", ".join(valid_loss_funcs.keys())}')
+    return valid_loss_funcs[config.train.loss_fn]
+
+def init_optimizer(model: nn.Module,
+                   config: Config = config
+                   )-> Type[torch.optim.Optimizer]:
+    valid_optimizers = {
+        'AdamW': torch.optim.AdamW(
+            model.parameters(),
+            lr=config.train.lr,
+            weight_decay=config.train.weight_decay,
+        ),
+    }
+    if config.train.optimizer not in valid_optimizers.keys():
+        raise ValueError(f'Optimizer {config.train.optimizer} not expected, select from {", ".join(valid_optimizers.keys())}')
+    return valid_optimizers[config.train.optimizer]
 
 def plusN_iterator(iterator: Iterator[tuple[torch.Tensor, ...]], extra_iters: int) -> Iterator[tuple[torch.Tensor, ...]]:
-    for entry in iterator:
-        yield(entry)
+    for i, entry in enumerate(iterator):
+        yield i, *entry
+
     for _ in range(extra_iters):
-        yield torch.tensor(float('nan')), torch.tensor(float('nan'))
+        yield torch.nan, torch.tensor(float('nan')), torch.tensor(float('nan'))
 
 def eval_model(model) -> None:
     return
@@ -126,7 +175,7 @@ def main(
     device: torch.device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
     logger.info(f'Running on {device}')
 
-    dataset = DecileDataset(
+    train_dataset = QuartileDataset(
         data_path=str(config.data.staged / data_path),
         X='abstract_tokens',
         y='citation_normalized_percentile',
@@ -135,19 +184,21 @@ def main(
         pad_value=0,
         testing=True,
     )
-    dataloader = init_dataloader(dataset)
+    train_dataloader = init_dataloader(train_dataset)
     model = nn.Linear(
-        dataset.MAX_LEN, 11, device=device
+        train_dataset.MAX_LEN, 5, device=device
     ) 
+    model.MODEL_NAME = 'placeholder'
     metric_tracker = ClassificationTracker(
         init_mtrack_params(),
         dtype=torch.float32,
         device=device,
     )
+    mlf_client, mlf_experiment, mlf_run = init_mlflow(model.MODEL_NAME)
 
     epoch_progress, example_progress, mem_util_progress = init_progress() 
     epochs_done = epoch_progress.add_task('Epochs', total=config.train.epochs)
-    examples_done = example_progress.add_task('Examples', total=len(dataloader))
+    examples_done = example_progress.add_task('Examples', total=len(train_dataloader) * config.train.batch_size)
     max_mem = 0
     if torch.cuda.is_available():
         _, max_mem = torch.cuda.mem_get_info()
@@ -157,24 +208,31 @@ def main(
     forward_finished = torch.cuda.Event()
     batch_copy_finished = torch.cuda.Event()
     output_copy_finished = torch.cuda.Event()
+    
+    loss_fn = init_loss_fun()
+    optimizer = init_optimizer(model)
 
     for epoch in range(1, config.train.epochs + 1):
         example_progress.update(examples_done, completed=0)
-        iterator = plusN_iterator(iter(dataloader), extra_iters=1)
+        train_iterator = plusN_iterator(iter(train_dataloader), extra_iters=1)
         with torch.cuda.stream(copy_stream):
-            current_X, current_y = next(iterator)
+            batch_i, current_X, current_y = next(train_iterator)
             metric_tracker.process_value(current_y, 'train_y')
             current_X = current_X.to(device, non_blocking=True)
-            current_y = current_y.to(device, non_blocking=True)
+            current_y = current_y.to(device, non_blocking=True).long()
             batch_copy_finished.record()
             output_copy_finished.record()
 
-        for next_X, next_y in iterator:
+        for next_batch_i, next_X, next_y in train_iterator:
             with torch.cuda.stream(compute_stream):
                 output_copy_finished.wait()
                 batch_copy_finished.wait()
                 out = model(current_X)
-                forward_finished.record()
+                loss = loss_fn(out.squeeze(-1), current_y)
+                forward_finished.record() # 'forward' finished later to allow to loss -> cpu copy
+                loss.backward()
+                optimizer.step()
+                optimizer.zero_grad() 
 
             with torch.cuda.stream(copy_stream):
                 next_X_gpu = next_X.to(device, non_blocking=True)
@@ -182,23 +240,32 @@ def main(
                 metric_tracker.process_value(next_y, 'train_y')
                 next_y_gpu = next_y.to(device, non_blocking=True)
                 forward_finished.wait()
-                metric_tracker.process_value(out, 'train_logits')
+                loss_cpu = loss.item()
+                if not torch.any(torch.isnan(next_X)):
+                    metric_tracker.log_metric('train_loss', loss_cpu, 1)
+                    metric_tracker.process_value(out, 'train_logits')
+                    mlflow.log_metric('train_loss', loss_cpu, step=batch_i * config.train.batch_size)
                 output_copy_finished.record()
                 current_X = next_X_gpu
-                current_y = next_y_gpu
+                current_y = next_y_gpu.long()
+                batch_i = next_batch_i
+
             example_progress.update(examples_done, advance=config.train.batch_size)
             mem_use, _ = torch.cuda.mem_get_info()
             mem_util_progress.update(mem_used, complete=mem_use * (1/(1024**2)))
 
-        metric_tracker.calc_metrics(
+        _ = metric_tracker.calc_metrics(
             logit_store_name='train_logits',
             y_store_name='train_y',
             prefix='train'
         )
-        _ = metric_tracker.report(
+        metrics = metric_tracker.report(
             progress_bar=epoch_progress, 
             epoch=epoch,
         )
+        # filter metrics logged in main loop
+        metrics = {k:v for k,v in metrics.items() if 'loss' not in k}
+        mlflow.log_metrics(metrics, step=epoch * config.train.batch_size * len(train_dataset))
 
         epoch_progress.update(epochs_done, advance=1)
 
