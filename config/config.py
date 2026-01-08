@@ -1,15 +1,21 @@
 from dataclasses import dataclass
 from pathlib import Path
 
+MLFLOW_DIR = '/home/fnoble/Dropbox/experiment-tracking'
+EXPERIMENT_NAME = 'AbstractForecast-testing'
+
 @dataclass(frozen=True)
 class ModelConfig:
     encoder_layers: int = 5
 
 @dataclass(frozen=True)
 class TrainConfig:
-    epochs: int = 2
-    batch_size: int = 2
-    optimizer = None     
+    epochs: int = 1000
+    batch_size: int = 2000
+    lr: float = 1e-4
+    weight_decay: float = 0.9
+    loss_fn: str = 'CrossEntropyLoss'
+    optimizer: str = 'AdamW'
     shuffle: bool = True
     sample: bool = False
 

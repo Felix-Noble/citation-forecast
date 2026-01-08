@@ -144,17 +144,17 @@ class ClassificationTracker:
                 logit_store_name: str,
                 y_store_name: str,
                 prefix: str = "",
-                ):
+                ) -> None:
         logits = self._gather_store(store_name=logit_store_name)
         probs = torch.softmax(
             logits,
             dim=1,
         )
         y_true = self._gather_store(store_name=y_store_name)
-        shortest_len = logits.size(0) if logits.size(0) < y_true.size(0) else y_true.size(0)
-        logger.debug(f'Before cut: logits: {logits.shape}, y: {y_true.shape}')
-        logits, y_true = logits[:shortest_len], y_true[:shortest_len]
-        logger.debug(f'After cut: logits: {logits.shape}, y: {y_true.shape}')
+
+        if logits.size(0) != y_true.size(0):
+            logger.error(f'Different n. examples in logits and y_true: logits shape: {logits.shape}, y_true shape:{y_true.shape}')
+
         try:
             roc_auc = roc_auc_score( # pyright: ignore[reportUnknownVariableType]
                 y_true.long().numpy(), 
@@ -180,7 +180,7 @@ class ClassificationTracker:
                progress_bar,
                epoch: int | None=None, 
                aggregate_metrics: dict[str, float] | None=None
-               ) -> None:
+               ) -> dict[str, float]:
         " Generates rich.Table, renders as string via capture(), returns"
         if aggregate_metrics is None:
             aggregate_metrics = self._aggregate_metrics()
@@ -196,3 +196,5 @@ class ClassificationTracker:
         table.add_row(*row_data)
 
         progress_bar.console.print(table)
+
+        return aggregate_metrics
