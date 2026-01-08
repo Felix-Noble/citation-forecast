@@ -1,3 +1,4 @@
+from datetime import datetime
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -16,6 +17,8 @@ class TrainConfig:
     weight_decay: float = 0.9
     loss_fn: str = 'CrossEntropyLoss'
     optimizer: str = 'AdamW'
+    eval_interval: int = 1
+    checkpoint_interval: int = 1
     shuffle: bool = True
     sample: bool = False
 
@@ -23,6 +26,10 @@ class TrainConfig:
 class DataConfig:
     raw: Path = Path('/home/fnoble/data/OpenAlex-parquet/')
     staged: Path = Path('/home/fnoble/data/staged/')
+    train_start: int = datetime(1950, 1, 1).toordinal()
+    train_end: int = datetime(2010, 1, 1).toordinal()
+    test_start: int = datetime(2010, 1, 1).toordinal()
+    test_end: int = datetime(2025, 1, 1).toordinal()
 
 @dataclass(frozen=True)
 class LogConfig:
