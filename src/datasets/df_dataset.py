@@ -19,6 +19,8 @@ class DF_Dataset(Dataset[tuple[Tensor, ...]]):
     def __init__(self, 
                  data_path: str,
                  X: str,
+                 t_start: int,
+                 t_end: int,
                  y: str | None = None,
                  max_len: int = int(1e32),
                  pad_value: int = 0,
@@ -29,13 +31,14 @@ class DF_Dataset(Dataset[tuple[Tensor, ...]]):
         super().__init__()
 
         if y is None:
-            columns = [X]
+            columns = [X, 'publication_date_int']
         else:
-            columns = list(set([X, y]))
+            columns = list(set([X, y, 'publication_date_int']))
 
         self.df: pd.DataFrame = cast(pd.DataFrame, 
                                      dd.read_parquet(data_path, columns=columns, engine='fastparquet') # pyright: ignore[reportPrivateImportUsage, reportUnknownMemberType]
                                      ) 
+        self.df = self.df[(self.df['publication_date_int'] >= t_start) & (self.df['publication_date_int'] < t_end)]
         self.df = cast(pd.DataFrame, 
                        self.df.compute() # pyright: ignore[reportUnknownMemberType]
                        ) 

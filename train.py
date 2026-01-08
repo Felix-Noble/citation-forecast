@@ -45,7 +45,12 @@ def init_mlflow(
     mlf_client = mlflow.MlflowClient(tracking_uri=f'file://{MLFLOW_DIR}')
     mlf_experiment = mlflow.set_experiment(EXPERIMENT_NAME)
     mlf_run = mlflow.start_run(run_name=model_name)
-    mlflow.log_params(config.__dict__)
+    param_dict = {}
+    for k,v in config.__dict__.items():
+        mod_params = {f'{k}-{sk}': val for sk, val in v.items()}
+        param_dict.update(mod_params)
+
+    mlflow.log_params(param_dict)
     return mlf_client, mlf_experiment, mlf_run
 
 def init_progress() -> tuple[Progress, ...]:
@@ -162,8 +167,64 @@ def plusN_iterator(iterator: Iterator[tuple[torch.Tensor, ...]], extra_iters: in
     for _ in range(extra_iters):
         yield torch.nan, torch.tensor(float('nan')), torch.tensor(float('nan'))
 
-def eval_model(model) -> None:
-    return
+def eval_model(
+    model: nn.Module,
+    loss_fn,
+    dataloader: DataLoader,
+    example_progress,
+    examples_done,
+    metric_tracker: ClassificationTracker,
+    compute_stream: torch.cuda.Stream,
+    copy_stream: torch.cuda.Stream,
+    device: torch.device,
+) -> None:
+    forward_finished = torch.cuda.Event()
+    batch_copy_finished = torch.cuda.Event()
+    output_copy_finished = torch.cuda.Event()
+    
+    model.eval()
+    for epoch in range(1, config.train.epochs + 1):
+        example_progress.update(examples_done, completed=0)
+        data_iterator = plusN_iterator(iter(dataloader), extra_iters=1)
+        with torch.cuda.stream(copy_stream):
+            batch_i, current_X, current_y = next(data_iterator)
+            metric_tracker.process_value(current_y, 'test_y')
+            current_X = current_X.to(device, non_blocking=True)
+            current_y = current_y.to(device, non_blocking=True).long()
+            batch_copy_finished.record()
+            output_copy_finished.record()
+
+        for next_batch_i, next_X, next_y in data_iterator:
+            with torch.cuda.stream(compute_stream):
+                output_copy_finished.wait()
+                batch_copy_finished.wait()
+                out = model(current_X)
+                loss = loss_fn(out.squeeze(-1), current_y)
+                forward_finished.record() # 'forward' finished later to allow to loss -> cpu copy
+
+            with torch.cuda.stream(copy_stream):
+                next_X_gpu = next_X.to(device, non_blocking=True)
+                batch_copy_finished.record()
+                metric_tracker.process_value(next_y, 'test_y')
+                next_y_gpu = next_y.to(device, non_blocking=True)
+                forward_finished.wait()
+                loss_cpu = loss.item()
+                if not torch.any(torch.isnan(next_X)):
+                    metric_tracker.log_metric('test_loss', loss_cpu, 1)
+                    metric_tracker.process_value(out, 'test_logits')
+                    mlflow.log_metric('test_loss', loss_cpu, step=batch_i * config.train.batch_size)
+                output_copy_finished.record()
+                current_X = next_X_gpu
+                current_y = next_y_gpu.long()
+                batch_i = next_batch_i
+
+            example_progress.update(examples_done, advance=config.train.batch_size)
+
+        _ = metric_tracker.calc_metrics(
+            logit_store_name='test_logits',
+            y_store_name='test_y',
+            prefix='test'
+        )
 
 @app.command()
 def main(
@@ -179,16 +240,33 @@ def main(
         data_path=str(config.data.staged / data_path),
         X='abstract_tokens',
         y='citation_normalized_percentile',
+        t_start=config.data.train_start,
+        t_end=config.data.train_end,
         max_len=500,
         pad=True,
         pad_value=0,
         testing=True,
     )
+    test_dataset = QuartileDataset(
+        data_path=str(config.data.staged / data_path),
+        X='abstract_tokens',
+        y='citation_normalized_percentile',
+        t_start=config.data.test_start,
+        t_end=config.data.test_end,
+        max_len=500,
+        pad=True,
+        pad_value=0,
+        testing=True,
+    )
+
     train_dataloader = init_dataloader(train_dataset)
+    test_dataloader = init_dataloader(test_dataset)
+
     model = nn.Linear(
         train_dataset.MAX_LEN, 5, device=device
     ) 
     model.MODEL_NAME = 'placeholder'
+
     metric_tracker = ClassificationTracker(
         init_mtrack_params(),
         dtype=torch.float32,
@@ -259,6 +337,23 @@ def main(
             y_store_name='train_y',
             prefix='train'
         )
+       
+        if epoch % config.train.eval_interval == 0:
+            eval_model(
+                model,
+                loss_fn,
+                test_dataloader,
+                example_progress,
+                examples_done,
+                metric_tracker,
+                compute_stream,
+                copy_stream,
+                device,
+                    )
+        if epoch & config.train.checkpoint_interval == 0:
+            pass
+            # checkpoint here
+
         metrics = metric_tracker.report(
             progress_bar=epoch_progress, 
             epoch=epoch,
