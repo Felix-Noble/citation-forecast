@@ -11,7 +11,7 @@ class ModelConfig:
 
 @dataclass(frozen=True)
 class TrainConfig:
-    epochs: int = 1000
+    epochs: int = 10
     batch_size: int = 2000
     lr: float = 1e-4
     weight_decay: float = 0.9
