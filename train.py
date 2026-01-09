@@ -42,12 +42,12 @@ def init_dataloader(
 def init_mlflow(
         model_name: str
 ):
-    mlf_client = mlflow.MlflowClient(tracking_uri=f'file://{MLFLOW_DIR}')
+    mlf_client = mlflow.MlflowClient(tracking_uri='http://127.0.0.1:5000')
     mlf_experiment = mlflow.set_experiment(EXPERIMENT_NAME)
     mlf_run = mlflow.start_run(run_name=model_name)
     param_dict = {}
     for k,v in config.__dict__.items():
-        mod_params = {f'{k}-{sk}': val for sk, val in v.items()}
+        mod_params = {f'{k}-{sk}': val for sk, val in v.__dict__.items()}
         param_dict.update(mod_params)
 
     mlflow.log_params(param_dict)
@@ -110,8 +110,8 @@ def init_mtrack_params(config: Config = config):
         n_examples=-1,
     )
 
-    val_logits = StoreParams(
-        'val_logits',
+    test_logits = StoreParams(
+        'test_logits',
         batch_shape=(config.train.batch_size, 5),
         buffer_size=4,
         buffer_device=gpu,
@@ -119,8 +119,8 @@ def init_mtrack_params(config: Config = config):
         n_examples=-1,
     )
 
-    val_y = StoreParams(
-        'val_y',
+    test_y = StoreParams(
+        'test_y',
         batch_shape=(config.train.batch_size, ),
         buffer_size=4,
         buffer_device=cpu,
@@ -128,15 +128,15 @@ def init_mtrack_params(config: Config = config):
         n_examples=-1,
     )
 
-    val_loss = StoreParams(
-        'val_loss',
+    test_loss = StoreParams(
+        'test_loss',
         batch_shape=(config.train.batch_size, ),
         buffer_size=4,
         buffer_device=gpu,
         max_store=-1,
         n_examples=-1,
     )
-    return train_logits, train_y, train_loss, val_logits, val_y, val_loss
+    return train_logits, train_y, train_loss, test_logits, test_y, test_loss
 
 def init_loss_fun(config: Config = config):
     valid_loss_funcs = {

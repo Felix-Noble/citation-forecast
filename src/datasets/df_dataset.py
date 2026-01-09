@@ -1,10 +1,11 @@
+import dask
 import dask.dataframe as dd
 import pandas as pd  
 import torch.nn as nn
 import torch
 from torch import Tensor
 from torch.utils.data import Dataset
-from typing import cast, override
+from typing import cast
 from rich.console import Console
 
 from config.config import config
@@ -14,6 +15,8 @@ from logging import getLogger
 logger = getLogger(Path(__file__).stem)
 _ = setup_logger(logger, config.logging)
 console = Console()
+
+dask.config.set({"dataframe.convert-string": False})
 
 class DF_Dataset(Dataset[tuple[Tensor, ...]]):
     def __init__(self, 
@@ -31,18 +34,19 @@ class DF_Dataset(Dataset[tuple[Tensor, ...]]):
         super().__init__()
 
         if y is None:
-            columns = [X, 'publication_date_int']
+            columns = [X]
         else:
-            columns = list(set([X, y, 'publication_date_int']))
-
-        self.df: pd.DataFrame = cast(pd.DataFrame, 
-                                     dd.read_parquet(data_path, columns=columns, engine='fastparquet') # pyright: ignore[reportPrivateImportUsage, reportUnknownMemberType]
+            columns = list(set([X, y]))
+        
+        self.df: dd.DataFrame = cast(dd.DataFrame, 
+                                     dd.read_parquet(data_path, columns=columns + ['publication_date_int'], engine='fastparquet') # pyright: ignore[reportPrivateImportUsage, reportUnknownMemberType]
                                      ) 
+
         self.df = self.df[(self.df['publication_date_int'] >= t_start) & (self.df['publication_date_int'] < t_end)]
+        self.df = self.df[columns]
         self.df = cast(pd.DataFrame, 
                        self.df.compute() # pyright: ignore[reportUnknownMemberType]
                        ) 
-
         prev_n = self.df.shape[0]
         self.df = self.df.dropna(subset=X)
         logger.info(f"Dropped {prev_n - self.df.shape[0]} missing '{X}' rows")
@@ -50,15 +54,16 @@ class DF_Dataset(Dataset[tuple[Tensor, ...]]):
             prev_n = self.df.shape[0]
             self.df = self.df.dropna(subset=y)
             logger.info(f"Dropped {prev_n - self.df.shape[0]} missing '{y}' rows")
-        
+
         if truncate == 'drop':
             prev_n = self.df.shape[0]
             self.df[f'{X}_len'] =  self.df[X].apply(lambda x : len(x))# pyright: ignore[reportUnknownMemberType]
-            self.df = self.df.loc[(self.df[f'{X}_len'] <= max_len), columns]
+            self.df = self.df.loc[self.df[f'{X}_len'] <= max_len, columns]
             logger.info(f"Dropped {prev_n - self.df.shape[0]:,} '{X}' len > {max_len:,} | {self.df.shape[0]:,} remaining") # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType]
 
         if testing:
             self.df = self.df.sample(n=20_000)
+
         self.df.reset_index(drop=True, inplace=True) 
 
         self.X: str = X
@@ -78,7 +83,6 @@ class DF_Dataset(Dataset[tuple[Tensor, ...]]):
     def _format_y(self, y: Tensor) -> Tensor:
         return y
 
-    @override
     def __getitem__(self, idx: int) -> tuple[Tensor, ...]:
         x: Tensor = torch.tensor(self.df.loc[idx, self.X], dtype=torch.float32)
 
