@@ -13,13 +13,13 @@ class ModelConfig:
     embed_dim: int = 32
     attention_dim: int = 32
     n_layers: int = 2
-    n_out: int = int(10 / 2)
+    n_out: int = 5
 
 @dataclass(frozen=True)
 class TrainConfig:
-    epochs: int = 10
-    batch_size: int = 128
-    lr: float = 1e-4
+    epochs: int = 100
+    batch_size: int = 2048 * 4
+    lr: float = 1e-3
     weight_decay: float = 0.9
     loss_fn: str = 'CrossEntropyLoss'
     optimizer: str = 'AdamW'
@@ -33,8 +33,8 @@ class DataConfig:
     raw: Path = Path('/home/fnoble/data/OpenAlex-parquet/')
     staged: Path = Path('/home/fnoble/data/staged/')
     train_start: int = datetime(1950, 1, 1).toordinal()
-    train_end: int = datetime(2010, 1, 1).toordinal()
-    test_start: int = datetime(2010, 1, 1).toordinal()
+    train_end: int = datetime(2017, 1, 1).toordinal()
+    test_start: int = datetime(2017, 1, 1).toordinal()
     test_end: int = datetime(2025, 1, 1).toordinal()
 
 @dataclass(frozen=True)
