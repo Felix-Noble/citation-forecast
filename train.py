@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 # train.py
 from typing import Iterator, Type
-from config.config import config, Config, MLFLOW_DIR, EXPERIMENT_NAME
+from config.config import config, Config, EXPERIMENT_NAME
 from src.types.valid_paths import VALID_PATHS
 from src.utils.logging import setup_logger
 from src.metric_trackers.classification_tracker import ClassificationTracker
 from src.datasets.quartile_dataset import QuartileDataset 
+from src.models.registry import get_model
 
 from concurrent.futures import ThreadPoolExecutor
 import mlflow
@@ -18,11 +19,15 @@ from rich.progress import Progress, TextColumn, BarColumn
 import typer
 from pathlib import Path
 from logging import getLogger
-
+TESTING = False
 logger = getLogger(Path(__file__).stem)
 _ = setup_logger(logger, config.logging)
  
-app = typer.Typer()
+app = typer.Typer(pretty_exceptions_enable=not TESTING)
+
+def isnan_async(loss: torch.float32):
+    if torch.any(torch.isnan(loss)):
+        raise ValueError('Loss is NaN, interrupting training')
 
 def init_dataloader(
     dataset: Dataset[tuple[Tensor, ...] | Tensor],
@@ -40,18 +45,20 @@ def init_dataloader(
     return dataloader
 
 def init_mlflow(
-        model_name: str
-):
-    mlf_client = mlflow.MlflowClient(tracking_uri='http://127.0.0.1:5000')
+        model_name: str,
+        data_path: str,
+    ):
+
+    mlflow.set_tracking_uri("http://127.0.0.1:5000")
     mlf_experiment = mlflow.set_experiment(EXPERIMENT_NAME)
     mlf_run = mlflow.start_run(run_name=model_name)
     param_dict = {}
     for k,v in config.__dict__.items():
         mod_params = {f'{k}-{sk}': val for sk, val in v.__dict__.items()}
         param_dict.update(mod_params)
-
+    param_dict['data-raw'] = str(param_dict['data-raw']) + data_path
     mlflow.log_params(param_dict)
-    return mlf_client, mlf_experiment, mlf_run
+    return mlf_experiment, mlf_run
 
 def init_progress() -> tuple[Progress, ...]:
     epoch_progress = Progress(
@@ -59,30 +66,36 @@ def init_progress() -> tuple[Progress, ...]:
         BarColumn(bar_width=40),
         TextColumn('[task.completed]{task.completed}/{task.total}'),
         TextColumn('[progress.percentage]{task.percentage:>3.0f}%'),
-        TextColumn('[bold green]{task.elapsed:.0f} < {task.remaining:.0f}[/bold green]') 
+        TextColumn('[bold green]{task.elapsed:.0f} < {task.remaining:.0f}[/bold green]'),
+        disable=TESTING,
     )     
     example_progress = Progress(
         TextColumn('[bold blue] {task.description}', justify='left'),
         BarColumn(bar_width=40),
         TextColumn('[task.completed]{task.completed}/{task.total}'),
         TextColumn('[progress.percentage]{task.percentage:>3.0f}%'),
-        TextColumn('[bold green]{task.elapsed:.0f} < {task.remaining:.0f}[/bold green]') 
+        TextColumn('[bold green]{task.elapsed:.0f} < {task.remaining:.0f}[/bold green]'),
+        disable=TESTING,
     )
     mem_util_progress = Progress(
         TextColumn('[yellow] {task.description}', justify='right'),
         BarColumn(bar_width=30),
         TextColumn('[task.completed]{task.completed:.1f}/{task.total:.1f} MiB'),
-        TextColumn('[progress.completed]{task.percentage:>3.0f}%'),
+        TextColumn('[progress.completed]{task.percentage:>3.0f}%'), 
+        disable=TESTING,
     )
-    
+
     epoch_progress.start()
     example_progress.start()
     mem_util_progress.start()
     return epoch_progress, example_progress, mem_util_progress
 
-def init_mtrack_params(config: Config = config):
+def init_mtrack_params(
+        device: torch.device,
+        config: Config = config, 
+):
     from src.metric_trackers.classification_tracker import StoreParams
-    gpu = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
+    gpu = device
     cpu = torch.device('cpu')
     train_logits = StoreParams(
         'train_logits',
@@ -183,42 +196,43 @@ def eval_model(
     output_copy_finished = torch.cuda.Event()
     
     model.eval()
-    for epoch in range(1, config.train.epochs + 1):
-        example_progress.update(examples_done, completed=0)
-        data_iterator = plusN_iterator(iter(dataloader), extra_iters=1)
-        with torch.cuda.stream(copy_stream):
-            batch_i, current_X, current_y = next(data_iterator)
-            metric_tracker.process_value(current_y, 'test_y')
-            current_X = current_X.to(device, non_blocking=True)
-            current_y = current_y.to(device, non_blocking=True).long()
-            batch_copy_finished.record()
-            output_copy_finished.record()
-
-        for next_batch_i, next_X, next_y in data_iterator:
-            with torch.cuda.stream(compute_stream):
-                output_copy_finished.wait()
-                batch_copy_finished.wait()
-                out = model(current_X)
-                loss = loss_fn(out.squeeze(-1), current_y)
-                forward_finished.record() # 'forward' finished later to allow to loss -> cpu copy
-
+    with torch.no_grad():
+        for epoch in range(1, config.train.epochs + 1):
+            example_progress.update(examples_done, completed=0)
+            data_iterator = plusN_iterator(iter(dataloader), extra_iters=1)
             with torch.cuda.stream(copy_stream):
-                next_X_gpu = next_X.to(device, non_blocking=True)
+                batch_i, current_X, current_y = next(data_iterator)
+                metric_tracker.process_value(current_y, 'test_y')
+                current_X = current_X.to(device, non_blocking=True).long()
+                current_y = current_y.to(device, non_blocking=True).long()
                 batch_copy_finished.record()
-                metric_tracker.process_value(next_y, 'test_y')
-                next_y_gpu = next_y.to(device, non_blocking=True)
-                forward_finished.wait()
-                loss_cpu = loss.item()
-                if not torch.any(torch.isnan(next_X)):
-                    metric_tracker.log_metric('test_loss', loss_cpu, 1)
-                    metric_tracker.process_value(out, 'test_logits')
-                    mlflow.log_metric('test_loss', loss_cpu, step=batch_i * config.train.batch_size)
                 output_copy_finished.record()
-                current_X = next_X_gpu
-                current_y = next_y_gpu.long()
-                batch_i = next_batch_i
 
-            example_progress.update(examples_done, advance=config.train.batch_size)
+            for next_batch_i, next_X, next_y in data_iterator:
+                with torch.cuda.stream(compute_stream):
+                    output_copy_finished.wait()
+                    batch_copy_finished.wait()
+                    out = model(current_X)
+                    loss = loss_fn(out.squeeze(-1), current_y)
+                    forward_finished.record() # 'forward' finished later to allow to loss -> cpu copy
+
+                with torch.cuda.stream(copy_stream):
+                    next_X_gpu = next_X.to(device, non_blocking=True)
+                    batch_copy_finished.record()
+                    metric_tracker.process_value(next_y, 'test_y')
+                    next_y_gpu = next_y.to(device, non_blocking=True)
+                    forward_finished.wait()
+                    loss_cpu = loss.item()
+                    if not torch.any(torch.isnan(next_X)):
+                        metric_tracker.log_metric('test_loss', loss_cpu, 1)
+                        metric_tracker.process_value(out, 'test_logits')
+                        mlflow.log_metric('test_loss', loss_cpu, step=batch_i * config.train.batch_size)
+                    output_copy_finished.record()
+                    current_X = next_X_gpu.long()
+                    current_y = next_y_gpu.long()
+                    batch_i = next_batch_i
+
+                example_progress.update(examples_done, advance=config.train.batch_size)
 
         _ = metric_tracker.calc_metrics(
             logit_store_name='test_logits',
@@ -233,8 +247,10 @@ def main(
     )
 ) -> None:
     " Main Loop "
-    device: torch.device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
-    logger.info(f'Running on {device}')
+    device: torch.device = torch.device('cuda') if torch.cuda.is_available() and not TESTING else torch.device('cpu')
+    logger.info(f'Running on {device}' + ' TESTING' if TESTING else '')
+
+    model = get_model(config.model.model_name)(config.model, device, torch.float32)
 
     train_dataset = QuartileDataset(
         data_path=str(config.data.staged / data_path),
@@ -245,7 +261,7 @@ def main(
         max_len=500,
         pad=True,
         pad_value=0,
-        testing=True,
+        testing=TESTING
     )
     test_dataset = QuartileDataset(
         data_path=str(config.data.staged / data_path),
@@ -256,24 +272,23 @@ def main(
         max_len=500,
         pad=True,
         pad_value=0,
-        testing=True,
+        testing=TESTING
     )
 
     train_dataloader = init_dataloader(train_dataset)
     test_dataloader = init_dataloader(test_dataset)
 
-    model = nn.Linear(
-        train_dataset.MAX_LEN, 5, device=device
-    ) 
-    model.MODEL_NAME = 'placeholder'
-
     metric_tracker = ClassificationTracker(
-        init_mtrack_params(),
+        init_mtrack_params(device=device),
         dtype=torch.float32,
         device=device,
     )
-    mlf_client, mlf_experiment, mlf_run = init_mlflow(model.MODEL_NAME)
+    mlf_experiment, mlf_run = init_mlflow(
+        model.MODEL_NAME,
+        data_path,
+    )
 
+    executor = ThreadPoolExecutor(max_workers=2)
     epoch_progress, example_progress, mem_util_progress = init_progress() 
     epochs_done = epoch_progress.add_task('Epochs', total=config.train.epochs)
     examples_done = example_progress.add_task('Examples', total=len(train_dataloader) * config.train.batch_size)
@@ -296,7 +311,7 @@ def main(
         with torch.cuda.stream(copy_stream):
             batch_i, current_X, current_y = next(train_iterator)
             metric_tracker.process_value(current_y, 'train_y')
-            current_X = current_X.to(device, non_blocking=True)
+            current_X = current_X.to(device, non_blocking=True).long()
             current_y = current_y.to(device, non_blocking=True).long()
             batch_copy_finished.record()
             output_copy_finished.record()
@@ -323,8 +338,9 @@ def main(
                     metric_tracker.log_metric('train_loss', loss_cpu, 1)
                     metric_tracker.process_value(out, 'train_logits')
                     mlflow.log_metric('train_loss', loss_cpu, step=batch_i * config.train.batch_size)
+                    executor.submit(isnan_async, loss_cpu)
                 output_copy_finished.record()
-                current_X = next_X_gpu
+                current_X = next_X_gpu.long()
                 current_y = next_y_gpu.long()
                 batch_i = next_batch_i
 

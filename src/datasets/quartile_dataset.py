@@ -5,5 +5,9 @@ from typing import override
 
 class QuartileDataset(DF_Dataset):
     @override
+    def _format_x(self, x: Tensor) -> Tensor:
+        return x.long() 
+
+    @override
     def _format_y(self, y: Tensor) -> Tensor:
         return torch.round(y*4, decimals=0)
