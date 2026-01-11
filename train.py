@@ -14,17 +14,22 @@ import torch
 import torch.nn as nn
 from torch import Tensor
 from torch.utils.data import Dataset, DataLoader
-from concurrent.futures import ThreadPoolExecutor
 from rich.progress import Progress, TextColumn, BarColumn, TimeElapsedColumn, TimeRemainingColumn
+from rich.traceback import install
 import typer
 from pathlib import Path
 from logging import getLogger
-TESTING = False
-PROGRESS = True
+
 logger = getLogger(Path(__file__).stem)
 _ = setup_logger(logger, config.logging)
  
-app = typer.Typer(pretty_exceptions_enable=not TESTING)
+app = typer.Typer(pretty_exceptions_enable=False)
+install(
+    show_locals=False,       # Turn off local variables (reduces noise)
+    extra_lines=1,           # Minimize context lines around the error (default is 3)
+    width=100,               # Prevents wrapping on wide screens for a cleaner look
+    word_wrap=False
+)
 
 def isnan_async(loss: torch.float32):
     if torch.any(torch.isnan(loss)):
@@ -63,7 +68,7 @@ def init_mlflow(
     mlflow.log_params(param_dict)
     return mlf_experiment, mlf_run
 
-def init_progress() -> tuple[Progress, ...]:
+def init_progress(disable=False) -> tuple[Progress, ...]:
     epoch_progress = Progress(
         TextColumn('[bold blue] {task.description}', justify='left'),
         BarColumn(bar_width=40),
@@ -72,7 +77,7 @@ def init_progress() -> tuple[Progress, ...]:
         TimeElapsedColumn(),
         TextColumn('<'), 
         TimeRemainingColumn(),
-        disable=not PROGRESS,
+        disable = disable,
     )     
     example_progress = Progress(
         TextColumn('[bold blue] {task.description}', justify='left'),
@@ -82,7 +87,7 @@ def init_progress() -> tuple[Progress, ...]:
         TimeElapsedColumn(),
         TextColumn('<'), 
         TimeRemainingColumn(),
-        disable=not PROGRESS,
+        disable= disable,
     )   
     eval_example_progress = Progress(
         TextColumn('[bold blue] {task.description}', justify='left'),
@@ -92,18 +97,18 @@ def init_progress() -> tuple[Progress, ...]:
         TimeElapsedColumn(),
         TextColumn('<'), 
         TimeRemainingColumn(),
-        disable=not PROGRESS,
+        disable= disable,
     )
     mem_util_progress = Progress(
         TextColumn('[yellow] {task.description}', justify='right'),
         BarColumn(bar_width=30),
         TextColumn('[task.completed]{task.completed:.1f}/{task.total:.1f} MiB'),
-        disable=not PROGRESS,
+        disable= disable,
     )
 
     epoch_progress.start()
     example_progress.start()
-    mem_util_progress.start()
+    #mem_util_progress.start() # no report on strix halo
     return epoch_progress, example_progress, eval_example_progress, mem_util_progress
 
 def init_mtrack_params(
@@ -116,7 +121,7 @@ def init_mtrack_params(
     train_logits = StoreParams(
         'train_logits',
         batch_shape=(config.train.batch_size, 5),
-        buffer_size=4,
+        buffer_size=1,
         buffer_device=gpu,
         max_store=-1,
         n_examples=-1,
@@ -124,7 +129,7 @@ def init_mtrack_params(
     train_y = StoreParams(
         'train_y',
         batch_shape=(config.train.batch_size, ),
-        buffer_size=4,
+        buffer_size=1,
         buffer_device=cpu,
         max_store=-1,
         n_examples=-1,
@@ -133,7 +138,7 @@ def init_mtrack_params(
     train_loss = StoreParams(
         'train_loss',
         batch_shape=(config.train.batch_size, ),
-        buffer_size=4,
+        buffer_size=1,
         buffer_device=gpu,
         max_store=-1,
         n_examples=-1,
@@ -142,7 +147,7 @@ def init_mtrack_params(
     test_logits = StoreParams(
         'test_logits',
         batch_shape=(config.train.batch_size, 5),
-        buffer_size=4,
+        buffer_size=1,
         buffer_device=gpu,
         max_store=-1,
         n_examples=-1,
@@ -151,7 +156,7 @@ def init_mtrack_params(
     test_y = StoreParams(
         'test_y',
         batch_shape=(config.train.batch_size, ),
-        buffer_size=4,
+        buffer_size=1,
         buffer_device=cpu,
         max_store=-1,
         n_examples=-1,
@@ -160,7 +165,7 @@ def init_mtrack_params(
     test_loss = StoreParams(
         'test_loss',
         batch_shape=(config.train.batch_size, ),
-        buffer_size=4,
+        buffer_size=1,
         buffer_device=gpu,
         max_store=-1,
         n_examples=-1,
@@ -210,61 +215,63 @@ def eval_model(
     forward_finished = torch.cuda.Event()
     batch_copy_finished = torch.cuda.Event()
     output_copy_finished = torch.cuda.Event()
-    
+    example_progress.start()
+
     model.eval()
     with torch.no_grad():
-        for epoch in range(1, config.train.epochs + 1):
-            example_progress.update(examples_done, completed=0)
-            data_iterator = plusN_iterator(iter(dataloader), extra_iters=1)
+        example_progress.update(examples_done, completed=0)
+        data_iterator = plusN_iterator(iter(dataloader), extra_iters=1)
+        with torch.cuda.stream(copy_stream):
+            batch_i, current_X, current_y = next(data_iterator)
+            current_X = current_X.to(device, non_blocking=True).long()
+            current_y = current_y.to(device, non_blocking=True).long()
+            batch_copy_finished.record()
+            output_copy_finished.record()
+
+        for next_batch_i, next_X, next_y in data_iterator:
+            with torch.cuda.stream(compute_stream):
+                output_copy_finished.wait()
+                batch_copy_finished.wait()
+                out = model(current_X)
+                loss = loss_fn(out.squeeze(-1), current_y)
+                forward_finished.record() # 'forward' finished later to allow to loss -> cpu copy
+
             with torch.cuda.stream(copy_stream):
-                batch_i, current_X, current_y = next(data_iterator)
-                metric_tracker.process_value(current_y, 'test_y')
-                current_X = current_X.to(device, non_blocking=True).long()
-                current_y = current_y.to(device, non_blocking=True).long()
+                next_X_gpu = next_X.to(device, non_blocking=True)
                 batch_copy_finished.record()
+                next_y_gpu = next_y.to(device, non_blocking=True)
+                forward_finished.wait()
+                loss_cpu = loss.detach().item()
+                if not torch.any(torch.isnan(next_X)):
+                    metric_tracker.log_metric('test_loss', loss_cpu, 1)
+                    metric_tracker.process_values((current_y, out.detach()), ('test_y', 'test_logits'))
+                    mlflow.log_metric('test_loss', loss_cpu, step=batch_i * config.train.batch_size, synchronous=False)
                 output_copy_finished.record()
+                current_X = next_X_gpu.long()
+                current_y = next_y_gpu.long()
+                batch_i = next_batch_i
 
-            for next_batch_i, next_X, next_y in data_iterator:
-                with torch.cuda.stream(compute_stream):
-                    output_copy_finished.wait()
-                    batch_copy_finished.wait()
-                    out = model(current_X)
-                    loss = loss_fn(out.squeeze(-1), current_y)
-                    forward_finished.record() # 'forward' finished later to allow to loss -> cpu copy
+            example_progress.update(examples_done, advance=config.train.batch_size)
 
-                with torch.cuda.stream(copy_stream):
-                    next_X_gpu = next_X.to(device, non_blocking=True)
-                    batch_copy_finished.record()
-                    metric_tracker.process_value(next_y, 'test_y')
-                    next_y_gpu = next_y.to(device, non_blocking=True)
-                    forward_finished.wait()
-                    loss_cpu = loss.item()
-                    if not torch.any(torch.isnan(next_X)):
-                        metric_tracker.log_metric('test_loss', loss_cpu, 1)
-                        metric_tracker.process_value(out, 'test_logits')
-                        mlflow.log_metric('test_loss', loss_cpu, step=batch_i * config.train.batch_size)
-                    output_copy_finished.record()
-                    current_X = next_X_gpu.long()
-                    current_y = next_y_gpu.long()
-                    batch_i = next_batch_i
+    _ = metric_tracker.calc_metrics(
+        logit_store_name='test_logits',
+        y_store_name='test_y',
+        prefix='test'
+    )
 
-                example_progress.update(examples_done, advance=config.train.batch_size)
-
-        _ = metric_tracker.calc_metrics(
-            logit_store_name='test_logits',
-            y_store_name='test_y',
-            prefix='test'
-        )
+    example_progress.update(examples_done, completed=0)
 
 @app.command()
 def main(
     data_path: VALID_PATHS = typer.Argument( 
-        help='data path relative to config.data.staged'
-    )
+        help='data path relative to config.data.staged'),
+    testing: bool = False,
+    progress: bool = True,
+    use_gpu: bool = True,
 ) -> None:
     " Main Loop "
-    device: torch.device = torch.device('cuda') if torch.cuda.is_available() and not TESTING else torch.device('cpu')
-    logger.info(f'Running on {device}{" TESTING" if TESTING else ""}')
+    device: torch.device = torch.device('cuda') if torch.cuda.is_available() and use_gpu else torch.device('cpu')
+    logger.info(f'Running on {device}{" TESTING" if testing else ""}')
 
     model = get_model(config.model.model_name)(config.model, device, torch.float32)
 
@@ -277,7 +284,7 @@ def main(
         max_len=500,
         pad=True,
         pad_value=0,
-        testing=TESTING
+        testing=testing
     )
     test_dataset = QuartileDataset(
         data_path=str(config.data.staged / data_path),
@@ -288,7 +295,7 @@ def main(
         max_len=500,
         pad=True,
         pad_value=0,
-        testing=TESTING
+        testing=testing
     )
 
     train_dataloader = init_dataloader(train_dataset)
@@ -298,6 +305,7 @@ def main(
         init_mtrack_params(device=device),
         dtype=torch.float32,
         device=device,
+        buffer=False,
     )
     mlf_experiment, mlf_run = init_mlflow(
         model.MODEL_NAME,
@@ -305,7 +313,7 @@ def main(
     )
 
     executor = ThreadPoolExecutor(max_workers=2)
-    epoch_progress, example_progress, eval_example_progress, mem_util_progress = init_progress() 
+    epoch_progress, example_progress, eval_example_progress, mem_util_progress = init_progress(disable = not progress) 
     epochs_done = epoch_progress.add_task('Epochs', total=config.train.epochs)
     examples_done = example_progress.add_task('Train Examples', total=len(train_dataloader) * config.train.batch_size)
     eval_examples_done = eval_example_progress.add_task('Eval Examples', total=len(test_dataloader) * config.train.batch_size)
@@ -327,7 +335,6 @@ def main(
         train_iterator = plusN_iterator(iter(train_dataloader), extra_iters=1)
         with torch.cuda.stream(copy_stream):
             batch_i, current_X, current_y = next(train_iterator)
-            metric_tracker.process_value(current_y, 'train_y')
             current_X = current_X.to(device, non_blocking=True).long()
             current_y = current_y.to(device, non_blocking=True).long()
             batch_copy_finished.record()
@@ -347,14 +354,13 @@ def main(
             with torch.cuda.stream(copy_stream):
                 next_X_gpu = next_X.to(device, non_blocking=True)
                 batch_copy_finished.record()
-                metric_tracker.process_value(next_y, 'train_y')
                 next_y_gpu = next_y.to(device, non_blocking=True)
                 forward_finished.wait()
-                loss_cpu = loss.item()
+                loss_cpu = loss.detach().item()
                 if not torch.any(torch.isnan(next_X)):
                     metric_tracker.log_metric('train_loss', loss_cpu, 1)
-                    metric_tracker.process_value(out, 'train_logits')
-                    mlflow.log_metric('train_loss', loss_cpu, step=batch_i * config.train.batch_size)
+                    metric_tracker.process_values((current_y, out.detach()), ('train_y', 'train_logits'))
+                    mlflow.log_metric('train_loss', loss_cpu, step=batch_i * config.train.batch_size, synchronous=False)
                     executor.submit(isnan_async, loss_cpu)
                 output_copy_finished.record()
                 current_X = next_X_gpu.long()
@@ -386,6 +392,7 @@ def main(
         if epoch & config.train.checkpoint_interval == 0:
             pass
             # checkpoint here
+            # save model state and run id, load each on restart (pass as option)
 
         metrics = metric_tracker.report(
             progress_bar=epoch_progress, 

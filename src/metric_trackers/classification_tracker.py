@@ -50,10 +50,12 @@ class ClassificationTracker:
                 store_params: tuple[StoreParams, ...],
                 dtype: torch.dtype,
                 device: torch.device,
+                buffer: bool = False,
                  ):
 
         self.dtype = dtype
         self.device: torch.device = device
+        self.buffer = buffer
         self.store_params: dict[str, StoreParams] = {params.name: params for params in store_params}
         self.stores: dict[str, Store] = {params.name: self._init_store(params) for params in store_params}
 
@@ -64,9 +66,13 @@ class ClassificationTracker:
         self.console: Console = Console()
 
     def _init_store(self, params: StoreParams) -> Store:
+        if self.buffer:
+            buffer=torch.empty((params.buffer_size, *params.batch_shape), dtype=self.dtype, device=params.buffer_device),
+        else:
+            buffer = torch.tensor(float('nan'))
         return Store(
             name=params.name,
-            buffer=torch.empty((params.buffer_size, *params.batch_shape), dtype=self.dtype, device=params.buffer_device),
+            buffer=buffer,
             store=[],
             buffer_cursor=torch.tensor(0, dtype=torch.int32, device=self.device),
             store_cursor=0,
@@ -81,7 +87,7 @@ class ClassificationTracker:
             
     def _flush_buffer(self, store: Store) -> None:
         " Flushed bufffer to CPU, resets cursor"
-        store.store.append(store.buffer.cpu())
+        store.store.append(store.buffer.flatten(end_dim=1).cpu())
         store.buffer = torch.empty_like(store.buffer)
         store.buffer_cursor = torch.zeros_like(store.buffer_cursor)
         store.store_cursor += store.store[-1].size(0)
@@ -91,7 +97,7 @@ class ClassificationTracker:
         store.buffer[store.buffer_cursor] = value.detach()
         store.buffer_cursor.add_(1)
 
-    def process_value(self, value: torch.Tensor, store: Store | str) -> None:
+    def _process_value(self, value: torch.Tensor, store: Store | str) -> None:
         """Stores outputs in buffer, syncs buffer to CPU when full and flushes, calculates metrics when store full and clears
             input: 
                 value: Tensor to be stored
@@ -104,13 +110,25 @@ class ClassificationTracker:
             store = self.stores[store]
 
         if torch.any(torch.isnan(value)):
-            logger.error(f'NaN values passed to process_value, not writing to buffer store {store}')
+            logger.error(f'NaN values passed to process_value, not writing to buffer store {store if isinstance(store, str) else store.name}')
             return
+        
+        if self.buffer:
+            buffer_full = store.buffer_cursor >= store.buffer.size(0) 
+            if buffer_full:
+                _ = self._flush_buffer(store)
+            _ = self._write_buffer(value, store)
+        else:
+            store.store.append(value.cpu())
 
-        buffer_full = store.buffer_cursor >= store.buffer.size(0) 
-        if buffer_full:
-            _ = self._flush_buffer(store)
-        _ = self._write_buffer(value, store)
+    def process_values(self, values: tuple[torch.Tensor,...], store_names: tuple[str, ...]):
+        for i, value in enumerate(values):
+            if torch.any(torch.isnan(value)):
+                logger.error(f'{store_names[i]} contains NaN values, {store_names} skipped')
+                return   
+
+        for i, value in enumerate(values):
+            self._process_value(value, store_names[i])
 
     def _gather_store(self, 
                       store: Store | None=None,
@@ -125,11 +143,12 @@ class ClassificationTracker:
                 logger.error('Store and Store_name are None, cannot gather store, returning NaN tensor')
                 return torch.tensor(float('nan'))
             store = self.stores[store_name]
-        _ = self._flush_buffer(store)
+        if self.buffer:
+            _ = self._flush_buffer(store)
 
-        all_values: torch.Tensor = torch.concatenate(store.store, dim=0)
+        all_values: torch.Tensor = torch.concatenate(store.store)
         self._reset_store(store)
-        return all_values.flatten(end_dim=1)
+        return all_values
 
     def log_metric(self,
                     name: str,
