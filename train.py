@@ -15,11 +15,12 @@ import torch.nn as nn
 from torch import Tensor
 from torch.utils.data import Dataset, DataLoader
 from concurrent.futures import ThreadPoolExecutor
-from rich.progress import Progress, TextColumn, BarColumn
+from rich.progress import Progress, TextColumn, BarColumn, TimeElapsedColumn, TimeRemainingColumn
 import typer
 from pathlib import Path
 from logging import getLogger
 TESTING = False
+PROGRESS = True
 logger = getLogger(Path(__file__).stem)
 _ = setup_logger(logger, config.logging)
  
@@ -47,11 +48,13 @@ def init_dataloader(
 def init_mlflow(
         model_name: str,
         data_path: str,
+        tracking_uri: str = "http://127.0.0.1:5000"
     ):
 
-    mlflow.set_tracking_uri("http://127.0.0.1:5000")
+    mlflow.set_tracking_uri(tracking_uri)
     mlf_experiment = mlflow.set_experiment(EXPERIMENT_NAME)
     mlf_run = mlflow.start_run(run_name=model_name)
+    logger.info(f'Mlflow connection established at {tracking_uri}')
     param_dict = {}
     for k,v in config.__dict__.items():
         mod_params = {f'{k}-{sk}': val for sk, val in v.__dict__.items()}
@@ -66,29 +69,42 @@ def init_progress() -> tuple[Progress, ...]:
         BarColumn(bar_width=40),
         TextColumn('[task.completed]{task.completed}/{task.total}'),
         TextColumn('[progress.percentage]{task.percentage:>3.0f}%'),
-        TextColumn('[bold green]{task.elapsed:.0f} < {task.remaining:.0f}[/bold green]'),
-        disable=TESTING,
+        TimeElapsedColumn(),
+        TextColumn('<'), 
+        TimeRemainingColumn(),
+        disable=not PROGRESS,
     )     
     example_progress = Progress(
         TextColumn('[bold blue] {task.description}', justify='left'),
         BarColumn(bar_width=40),
         TextColumn('[task.completed]{task.completed}/{task.total}'),
         TextColumn('[progress.percentage]{task.percentage:>3.0f}%'),
-        TextColumn('[bold green]{task.elapsed:.0f} < {task.remaining:.0f}[/bold green]'),
-        disable=TESTING,
+        TimeElapsedColumn(),
+        TextColumn('<'), 
+        TimeRemainingColumn(),
+        disable=not PROGRESS,
+    )   
+    eval_example_progress = Progress(
+        TextColumn('[bold blue] {task.description}', justify='left'),
+        BarColumn(bar_width=40),
+        TextColumn('[task.completed]{task.completed}/{task.total}'),
+        TextColumn('[progress.percentage]{task.percentage:>3.0f}%'),
+        TimeElapsedColumn(),
+        TextColumn('<'), 
+        TimeRemainingColumn(),
+        disable=not PROGRESS,
     )
     mem_util_progress = Progress(
         TextColumn('[yellow] {task.description}', justify='right'),
         BarColumn(bar_width=30),
         TextColumn('[task.completed]{task.completed:.1f}/{task.total:.1f} MiB'),
-        TextColumn('[progress.completed]{task.percentage:>3.0f}%'), 
-        disable=TESTING,
+        disable=not PROGRESS,
     )
 
     epoch_progress.start()
     example_progress.start()
     mem_util_progress.start()
-    return epoch_progress, example_progress, mem_util_progress
+    return epoch_progress, example_progress, eval_example_progress, mem_util_progress
 
 def init_mtrack_params(
         device: torch.device,
@@ -248,7 +264,7 @@ def main(
 ) -> None:
     " Main Loop "
     device: torch.device = torch.device('cuda') if torch.cuda.is_available() and not TESTING else torch.device('cpu')
-    logger.info(f'Running on {device}' + ' TESTING' if TESTING else '')
+    logger.info(f'Running on {device}{" TESTING" if TESTING else ""}')
 
     model = get_model(config.model.model_name)(config.model, device, torch.float32)
 
@@ -289,9 +305,10 @@ def main(
     )
 
     executor = ThreadPoolExecutor(max_workers=2)
-    epoch_progress, example_progress, mem_util_progress = init_progress() 
+    epoch_progress, example_progress, eval_example_progress, mem_util_progress = init_progress() 
     epochs_done = epoch_progress.add_task('Epochs', total=config.train.epochs)
-    examples_done = example_progress.add_task('Examples', total=len(train_dataloader) * config.train.batch_size)
+    examples_done = example_progress.add_task('Train Examples', total=len(train_dataloader) * config.train.batch_size)
+    eval_examples_done = eval_example_progress.add_task('Eval Examples', total=len(test_dataloader) * config.train.batch_size)
     max_mem = 0
     if torch.cuda.is_available():
         _, max_mem = torch.cuda.mem_get_info()
@@ -359,8 +376,8 @@ def main(
                 model,
                 loss_fn,
                 test_dataloader,
-                example_progress,
-                examples_done,
+                eval_example_progress,
+                eval_examples_done,
                 metric_tracker,
                 compute_stream,
                 copy_stream,

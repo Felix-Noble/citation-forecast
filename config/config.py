@@ -9,15 +9,16 @@ EXPERIMENT_NAME = 'AbstractForecast-testing'
 class ModelConfig:
     model_name:str = 'R_RNN'
     vocab_size:int = 201_088
-    embed_dim: int = 512
-    attention_dim: int = 512
-    n_layers: int = 4
+    eos_token: int = 200_002
+    embed_dim: int = 32
+    attention_dim: int = 32
+    n_layers: int = 2
     n_out: int = int(10 / 2)
 
 @dataclass(frozen=True)
 class TrainConfig:
     epochs: int = 10
-    batch_size: int = 1
+    batch_size: int = 128
     lr: float = 1e-4
     weight_decay: float = 0.9
     loss_fn: str = 'CrossEntropyLoss'

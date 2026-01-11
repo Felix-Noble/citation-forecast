@@ -104,7 +104,7 @@ class ClassificationTracker:
             store = self.stores[store]
 
         if torch.any(torch.isnan(value)):
-            logger.error('NaN values passed to process_value, not writing to buffer')
+            logger.error(f'NaN values passed to process_value, not writing to buffer store {store}')
             return
 
         buffer_full = store.buffer_cursor >= store.buffer.size(0) 
