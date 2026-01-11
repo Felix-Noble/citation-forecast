@@ -4,12 +4,13 @@ import inspect
 from pathlib import Path
 
 def build_registry() -> dict[str, type[nn.Module]]:
+    module_path = ('src' + str(Path(__file__).parent).split('src')[-1]).replace('/', '.')
     current_path = Path(__file__)
     module_names = [str(f.stem) for f in Path(__file__).parent.glob('*.py') if f != current_path]
 
     registry: dict[str, type[nn.Module]] = {}
     for module_name in module_names:
-        module = importlib.import_module(str(module_name))
+        module = importlib.import_module(module_path + '.' + str(module_name))
 
         components = [clss for name,clss in inspect.getmembers(module, inspect.isclass) if hasattr(clss, 'MODEL_NAME')]
         if len(components) > 1:

@@ -7,12 +7,17 @@ EXPERIMENT_NAME = 'AbstractForecast-testing'
 
 @dataclass(frozen=True)
 class ModelConfig:
-    encoder_layers: int = 5
+    model_name:str = 'R_RNN'
+    vocab_size:int = 201_088
+    embed_dim: int = 512
+    attention_dim: int = 512
+    n_layers: int = 4
+    n_out: int = int(10 / 2)
 
 @dataclass(frozen=True)
 class TrainConfig:
     epochs: int = 10
-    batch_size: int = 2000
+    batch_size: int = 1
     lr: float = 1e-4
     weight_decay: float = 0.9
     loss_fn: str = 'CrossEntropyLoss'
