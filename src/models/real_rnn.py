@@ -32,17 +32,21 @@ class R_RNN(nn.Module):
         self.head = nn.Linear(model_config.attention_dim, model_config.n_out, device=device, dtype=dtype)
 
     def forward(self, x: Tensor):
+        eos_one_hot = torch.zeros_like(x)
+        eos_one_hot[x == self.config.eos_token] = 1
         embeddings = self.embed(x)
         B, T, C = embeddings.shape
         attention = torch.ones((B, self.config.attention_dim, 1), device=self.device, dtype=self.dtype)
         for layer in range(self.config.n_layers):
             embed_projections = self.embed_proj(embeddings).unsqueeze(-1)
             embed_transforms = embed_projections @ embed_projections.transpose(-1, -2)
+            next_attention = torch.zeros_like(attention.squeeze(-1))
             for t in range(T):
-                # check for 0 vals here and adjust 
                 attention = embed_transforms[:, t, :, :] @ attention
                 attention = nn.functional.rms_norm(attention, (attention.shape[-1], ))
-                
+                next_attention += attention.squeeze(-1) * eos_one_hot[:, t].unsqueeze(-1)
+
+            attention = next_attention.unsqueeze(-1).clone()
             attention_projection = self.attention_proj(attention.squeeze(-1)).unsqueeze(-1)
             attention_transformation = attention_projection @ attention_projection.transpose(-1, -2)
             embeddings = attention_transformation.unsqueeze(1).expand(-1, T, -1, -1) @ embeddings.unsqueeze(-1)
