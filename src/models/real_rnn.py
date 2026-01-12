@@ -31,8 +31,17 @@ class R_RNN(nn.Module):
 
         self.head = nn.Linear(model_config.attention_dim, model_config.n_out, device=device, dtype=dtype)
 
+    def eos_attention_escape(self, attention: Tensor, next_attention: Tensor, eos_one_hot_t: Tensor):
+        """ Attention addition for torch.cond (true_fn) call """
+        next_attention += attention.squeeze(-1) * eos_one_hot_t.unsqueeze(-1)
+    
+    def no_eos_func(self, attention: Tensor, next_attention: Tensor, eos_one_hot_t: Tensor):
+        """ Attention addition for torch.cond (false_fn) call """
+        pass
+
     def forward(self, x: Tensor):
         eos_one_hot = torch.zeros_like(x)
+        max_eos_idx = torch.max(torch.where(x == self.config.eos_token)[1])
         eos_one_hot[x == self.config.eos_token] = 1
         embeddings = self.embed(x)
         B, T, C = embeddings.shape
@@ -41,7 +50,7 @@ class R_RNN(nn.Module):
             embed_projections = self.embed_proj(embeddings).unsqueeze(-1)
             embed_transforms = embed_projections @ embed_projections.transpose(-1, -2)
             next_attention = torch.zeros_like(attention.squeeze(-1))
-            for t in range(T):
+            for t in range(max_eos_idx):
                 attention = embed_transforms[:, t, :, :] @ attention
                 attention = nn.functional.rms_norm(attention, (attention.shape[-1], ))
                 next_attention += attention.squeeze(-1) * eos_one_hot[:, t].unsqueeze(-1)
