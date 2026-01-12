@@ -41,13 +41,15 @@ def init_dataloader(
     config: Config = config,
 ) -> DataLoader[tuple[Tensor, ...] | Tensor]:
 
+    # TODO: add sample check here and integrate sampler
+
     dataloader = DataLoader(
         dataset,
         batch_size=config.train.batch_size,
-        num_workers=1,
-        prefetch_factor=None,
+        num_workers=2,
+        prefetch_factor=2,
         pin_memory=True,
-        shuffle=True,
+        shuffle=config.train.shuffle,
     )
     return dataloader
 
@@ -418,6 +420,7 @@ def main(
             os.makedirs(save_dir, exist_ok=True)
             checkpoint = model.state_dict()
             torch.save(checkpoint, save_path)
+            mlflow.log_artifact(save_path)
             # save model state and run id, load each on restart (pass as option)
 
         metrics = metric_tracker.report(

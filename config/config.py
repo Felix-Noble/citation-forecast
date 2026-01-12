@@ -3,39 +3,14 @@ from datetime import datetime
 from dataclasses import dataclass
 from pathlib import Path
 EXPERIMENT_NAME = 'AbstractForecast-testing'
-def init_lr_scheduler(
-    optimizer,
-):
-    warmup_scheduler = torch.optim.lr_scheduler.LinearLR(
-        optimizer, 
-        start_factor=0.8, 
-        end_factor=1.0,
-        total_iters=5,
-        last_epoch=-1
-    )
-
-    cosine_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-        optimizer,
-        T_max=100,
-        eta_min=1e-8,
-        last_epoch=-1, # Used to implement restart from checkpoint
-    )
-
-    scheduler = torch.optim.lr_scheduler.SequentialLR(
-        optimizer,
-        [warmup_scheduler, cosine_scheduler],
-        [5],
-        last_epoch=-1,
-    )
-    return scheduler 
 
 @dataclass(frozen=True)
 class ModelConfig:
     model_name:str = 'R_RNN'
     vocab_size:int = 201_088
     eos_token: int = 200_002
-    embed_dim: int = 32
-    attention_dim: int = 32
+    embed_dim: int = 64
+    attention_dim: int = 64
     n_layers: int = 4
     n_out: int = 5
 
@@ -45,8 +20,8 @@ Optimizer = torch.optim.AdamW
 @dataclass(frozen=True)
 class TrainConfig:
     epochs: int = 100
-    batch_size: int = 10
-    lr: float = 1e-3
+    batch_size: int = 1024 
+    lr: float = 5e-4
     weight_decay: float = 0.9
     loss_fn: str = Loss_fn.__name__
     optimizer: str = Optimizer.__name__
@@ -77,6 +52,34 @@ class Config:
     logging: LogConfig = LogConfig()
 
 config = Config()
+
+def init_lr_scheduler(
+    optimizer,
+):
+    milestones = [10]
+
+    warmup_scheduler = torch.optim.lr_scheduler.LinearLR(
+        optimizer, 
+        start_factor=0.7, 
+        end_factor=1.0,
+        total_iters=3,
+        last_epoch=-1 # Used to implement restart from checkpoint
+    )
+
+    cosine_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+        optimizer,
+        T_max=config.train.epochs - milestones[0],
+        eta_min=1e-8,
+        last_epoch=-1, # Used to implement restart from checkpoint
+    )
+
+    scheduler = torch.optim.lr_scheduler.SequentialLR(
+        optimizer,
+        [warmup_scheduler, cosine_scheduler],
+        milestones,
+        last_epoch=-1,
+    )
+    return scheduler 
 
 # Safety checks
 if config.train.sample and config.train.shuffle:
