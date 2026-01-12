@@ -35,9 +35,9 @@ class DataConfig:
     raw: Path = Path('/home/fnoble/data/OpenAlex-parquet/')
     staged: Path = Path('/home/fnoble/data/staged/')
     train_start: int = datetime(2000, 1, 1).toordinal() # TODO change these to only datetime (strings for mlflow logging, convert to ordinal when needed)
-    train_end: int = datetime(2012, 1, 1).toordinal()
-    test_start: int = datetime(2012, 1, 1).toordinal()
-    test_end: int = datetime(2013, 1, 1).toordinal()
+    train_end: int = datetime(2003, 1, 1).toordinal()
+    test_start: int = datetime(2003, 1, 1).toordinal()
+    test_end: int = datetime(2004, 1, 1).toordinal()
 
 @dataclass(frozen=True)
 class LogConfig:
