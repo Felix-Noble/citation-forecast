@@ -36,8 +36,12 @@ from logging import getLogger
 #HSA_OVERRIDE_GFX_VERSION=11.0.0 
 #ROCBLAS_USE_HIPBLASLT=1 
 #TORCH_BLAS_PREFER_HIPBLASLT=1
-if hasattr(torch.backends.cuda, "preferred_blas_library"):
-    torch.backends.cuda.preferred_blas_library("ck") 
+# logging verbosity
+#PYTORCH_TUNABLEOP_ENABLED=1
+#PYTORCH_TUNABLEOP_VERBOSE=1
+
+#if hasattr(torch.backends.cuda, "preferred_blas_library"):
+#    torch.backends.cuda.preferred_blas_library("cublas") 
 
 # float32 precision
 #torch.backends.cuda.matmul.allow_tf32 = False 
@@ -131,6 +135,7 @@ def init_progress(disable=False) -> tuple[Progress, ...]:
         TimeElapsedColumn(),
         TextColumn('<'), 
         TimeRemainingColumn(),
+        speed_estimate_period=60.0 * 60.0 * 10, # hours
         disable = disable,
     )     
     example_progress = Progress(
@@ -141,6 +146,7 @@ def init_progress(disable=False) -> tuple[Progress, ...]:
         TimeElapsedColumn(),
         TextColumn('<'), 
         TimeRemainingColumn(),
+        speed_estimate_period=60.0 * 30, # mins
         disable= disable,
     )   
     eval_example_progress = Progress(
@@ -151,6 +157,7 @@ def init_progress(disable=False) -> tuple[Progress, ...]:
         TimeElapsedColumn(),
         TextColumn('<'), 
         TimeRemainingColumn(),
+        speed_estimate_period=60.0 * 30, # mins
         disable= disable,
     )
     mem_util_progress = Progress(
@@ -278,7 +285,7 @@ def eval_model(
                 if not torch.any(torch.isnan(next_X)):
                     metric_tracker.log_metric('test_loss', loss_cpu, 1)
                     metric_tracker.process_values((current_y, out.detach()), ('test_y', 'test_logits'))
-                    mlflow.log_metric('test_loss', loss_cpu, step=(epoch - 1) * batch_i * config.train.batch_size, synchronous=False)
+                    mlflow.log_metric('test_loss', loss_cpu, step=(epoch - 1) * batch_i * config.train.batch_size, synchronous=True)
                 output_copy_finished.record()
                 current_X = next_X_gpu.long()
                 current_y = next_y_gpu.long()
@@ -408,7 +415,7 @@ def main(
                 if not torch.any(torch.isnan(next_X)):
                     metric_tracker.log_metric('train_loss', loss_cpu, 1)
                     metric_tracker.process_values((current_y, out.detach()), ('train_y', 'train_logits'))
-                    mlflow.log_metric('train_loss', loss_cpu, step=(epoch - 1) * batch_i * config.train.batch_size, synchronous=False)
+                    mlflow.log_metric('train_loss', loss_cpu, step=(epoch - 1) * batch_i * config.train.batch_size, synchronous=True)
                     executor.submit(isnan_async, loss_cpu)
                 output_copy_finished.record()
                 current_X = next_X_gpu.long()
@@ -463,31 +470,3 @@ def main(
 
 if __name__ == '__main__':
     app()
-    '''
-    logger.info('Starting test')
-    device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    device = torch.device(device)
-
-    logger.info(f'Device: {device}')
-    n_out = 3
-    n_examps = 50
-    batch_size = 5
-    n_batches = n_examps // batch_size
-
-    test_x = torch.randn((n_batches, batch_size, 20))
-    test_y = torch.randint(0, n_out, (n_batches * batch_size,))
-    metric_tracker = ClassificationTracker(
-        (batch_size, n_out), n_batches, n_examps, n_examps, torch.float32, device
-    )
-    model: torch.nn.Linear = torch.nn.Linear(20, n_out)
-     
-    for examp in test_x:
-        out: torch.Tensor = model(examp) # pyright: ignore[reportAny]
-        metric_tracker.store_output(out)
-
-    outputs = torch.softmax(metric_tracker._stack_buffer(), dim=1).cpu()
-    roc_auc = roc_auc_score(test_y, outputs, multi_class='ovo', average='weighted')
-    metric_tracker._log_metric('train roc_auc', roc_auc, 1)
-    report = metric_tracker.report()
-    print(report)
-    '''
