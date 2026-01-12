@@ -3,7 +3,7 @@ from dataclasses import dataclass
 import pandas as pd
 from rich.table import Table
 from rich.console import Console
-from sklearn.metrics import roc_auc_score # pyright: ignore[reportUnknownVariableType, reportMissingTypeStubs] 
+from sklearn.metrics import roc_auc_score, balanced_accuracy_score # pyright: ignore[reportUnknownVariableType, reportMissingTypeStubs] 
 import torch
 from pathlib import Path
 from logging import getLogger
@@ -145,10 +145,14 @@ class ClassificationTracker:
             store = self.stores[store_name]
         if self.buffer:
             _ = self._flush_buffer(store)
-
-        all_values: torch.Tensor = torch.concatenate(store.store)
-        self._reset_store(store)
-        return all_values
+        
+        if len(store.store) > 0: 
+            all_values: torch.Tensor = torch.concatenate(store.store)
+            self._reset_store(store)
+            return all_values
+        else:
+            logger.error(f'Store {store.name} contains no values, resetting')
+            self._reset_store(store)
 
     def log_metric(self,
                     name: str,
@@ -169,12 +173,20 @@ class ClassificationTracker:
             logits,
             dim=1,
         )
+        preds = torch.argmax(
+            probs,
+            dim=1,
+        )
         y_true = self._gather_store(store_name=y_store_name)
 
         if logits.size(0) != y_true.size(0):
             logger.error(f'Different n. examples in logits and y_true: logits shape: {logits.shape}, y_true shape:{y_true.shape}')
+            return
 
         try:
+            balanced_accuracy = balanced_accuracy_score(y_true, preds)
+            self.log_metric(f'{prefix}_balanced_accuracy', balanced_accuracy, preds.shape[0]) # pyright: ignore[reportArgumentType]
+
             roc_auc = roc_auc_score( # pyright: ignore[reportUnknownVariableType]
                 y_true.long().numpy(), 
                 probs.numpy(), 
@@ -191,7 +203,7 @@ class ClassificationTracker:
         for metric in aggregate_metrics.keys():
             df: pd.DataFrame = pd.DataFrame(self.metric_store[metric])
             score: float = (df['score'] * df['weight']).sum() / (df['weight'].sum())
-            aggregate_metrics[metric] = score
+            aggregate_metrics[metric] = round(score, 6)
 
         return aggregate_metrics 
 

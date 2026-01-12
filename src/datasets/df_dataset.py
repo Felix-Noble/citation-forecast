@@ -62,7 +62,7 @@ class DF_Dataset(Dataset[tuple[Tensor, ...]]):
             logger.info(f"Dropped {prev_n - self.df.shape[0]:,} '{X}' len > {max_len:,} | {self.df.shape[0]:,} remaining") # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType]
 
         if testing:
-            self.df = self.df.sample(n=10, replace=True)
+            self.df = self.df.sample(n=200, replace=True)
 
         self.df.reset_index(drop=True, inplace=True) 
 
