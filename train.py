@@ -243,7 +243,7 @@ def plusN_iterator(iterator: Iterator[tuple[torch.Tensor, ...]], extra_iters: in
         yield torch.nan, torch.tensor(float('nan')), torch.tensor(float('nan'))
 
 def eval_model(
-    epoch: int,
+    step_offset:int,
     model: nn.Module,
     loss_fn,
     dataloader: DataLoader,
@@ -285,7 +285,7 @@ def eval_model(
                 if not torch.any(torch.isnan(next_X)):
                     metric_tracker.log_metric('test_loss', loss_cpu, 1)
                     metric_tracker.process_values((current_y, out.detach()), ('test_y', 'test_logits'))
-                    mlflow.log_metric('test_loss', loss_cpu, step=(epoch - 1) * batch_i * config.train.batch_size, synchronous=True)
+                    mlflow.log_metric('test_loss', loss_cpu, step = step_offset + (batch_i * config.train.batch_size))
                 output_copy_finished.record()
                 current_X = next_X_gpu.long()
                 current_y = next_y_gpu.long()
@@ -355,6 +355,7 @@ def main(
         testing=testing
     )
 
+    examples_per_epoch = len(train_dataset) # update this for when sampling is introduced
     train_dataloader = init_dataloader(train_dataset)
     test_dataloader = init_dataloader(test_dataset)
 
@@ -415,7 +416,8 @@ def main(
                 if not torch.any(torch.isnan(next_X)):
                     metric_tracker.log_metric('train_loss', loss_cpu, 1)
                     metric_tracker.process_values((current_y, out.detach()), ('train_y', 'train_logits'))
-                    mlflow.log_metric('train_loss', loss_cpu, step=(epoch - 1) * batch_i * config.train.batch_size, synchronous=True)
+                    print((epoch-1) * examples_per_epoch + batch_i * config.train.batch_size)
+                    mlflow.log_metric('train_loss', loss_cpu, step = (epoch-1) * examples_per_epoch + batch_i * config.train.batch_size)
                     executor.submit(isnan_async, loss_cpu)
                 output_copy_finished.record()
                 current_X = next_X_gpu.long()
@@ -431,21 +433,6 @@ def main(
             y_store_name='train_y',
             prefix='train'
         )
-        scheduler.step() 
-
-        if epoch % config.train.eval_interval == 0:
-            eval_model(
-                epoch,
-                model,
-                loss_fn,
-                test_dataloader,
-                eval_example_progress,
-                eval_examples_done,
-                metric_tracker,
-                compute_stream,
-                copy_stream,
-                device,
-                    )
 
         if epoch & config.train.checkpoint_interval == 0:
             save_dir = os.path.join(artifact_path, EXPERIMENT_NAME, str(mlf_run.info.run_id))
@@ -456,13 +443,29 @@ def main(
             mlflow.log_artifact(save_path)
             # save model state and run id, load each on restart (pass as option)
 
+        scheduler.step() 
+
+        if epoch % config.train.eval_interval == 0:
+            eval_model(
+                step_offset=(epoch-1) * examples_per_epoch,
+                model=model,
+                loss_fn=loss_fn,
+                dataloader=test_dataloader,
+                example_progress=eval_example_progress,
+                examples_done=eval_examples_done,
+                metric_tracker=metric_tracker,
+                compute_stream=compute_stream,
+                copy_stream=copy_stream,
+                device=device,
+                    )
+
         metrics = metric_tracker.report(
             progress_bar=epoch_progress, 
             epoch=epoch,
         )
         # filter metrics logged in main loop
         metrics = {k:v for k,v in metrics.items() if 'loss' not in k}
-        mlflow.log_metrics(metrics, step=epoch * config.train.batch_size * len(train_dataset))
+        mlflow.log_metrics(metrics, step = epoch * examples_per_epoch, synchronous=False)
 
         epoch_progress.update(epochs_done, advance=1)
 
