@@ -416,7 +416,6 @@ def main(
                 if not torch.any(torch.isnan(next_X)):
                     metric_tracker.log_metric('train_loss', loss_cpu, 1)
                     metric_tracker.process_values((current_y, out.detach()), ('train_y', 'train_logits'))
-                    print((epoch-1) * examples_per_epoch + batch_i * config.train.batch_size)
                     mlflow.log_metric('train_loss', loss_cpu, step = (epoch-1) * examples_per_epoch + batch_i * config.train.batch_size)
                     executor.submit(isnan_async, loss_cpu)
                 output_copy_finished.record()
