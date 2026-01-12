@@ -2,7 +2,7 @@ import torch
 from datetime import datetime
 from dataclasses import dataclass
 from pathlib import Path
-EXPERIMENT_NAME = 'AbstractForecast-testing'
+EXPERIMENT_NAME = 'AF-Psych-S'
 
 @dataclass(frozen=True)
 class ModelConfig:
@@ -19,9 +19,9 @@ Optimizer = torch.optim.AdamW
 
 @dataclass(frozen=True)
 class TrainConfig:
-    epochs: int = 11
-    batch_size: int = 20 
-    lr: float = 1e-9#5e-4
+    epochs: int = 200
+    batch_size: int = 2048
+    lr: float = 5e-4
     weight_decay: float = 0.9
     loss_fn: str = Loss_fn.__name__
     optimizer: str = Optimizer.__name__
