@@ -1,9 +1,33 @@
+import torch
 from datetime import datetime
 from dataclasses import dataclass
 from pathlib import Path
-
-MLFLOW_DIR = '/home/fnoble/Dropbox/experiment-tracking'
 EXPERIMENT_NAME = 'AbstractForecast-testing'
+def init_lr_scheduler(
+    optimizer,
+):
+    warmup_scheduler = torch.optim.lr_scheduler.LinearLR(
+        optimizer, 
+        start_factor=0.8, 
+        end_factor=1.0,
+        total_iters=5,
+        last_epoch=-1
+    )
+
+    cosine_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+        optimizer,
+        T_max=100,
+        eta_min=1e-8,
+        last_epoch=-1, # Used to implement restart from checkpoint
+    )
+
+    scheduler = torch.optim.lr_scheduler.SequentialLR(
+        optimizer,
+        [warmup_scheduler, cosine_scheduler],
+        [5],
+        last_epoch=-1,
+    )
+    return scheduler 
 
 @dataclass(frozen=True)
 class ModelConfig:
@@ -12,17 +36,20 @@ class ModelConfig:
     eos_token: int = 200_002
     embed_dim: int = 32
     attention_dim: int = 32
-    n_layers: int = 2
+    n_layers: int = 4
     n_out: int = 5
+
+Loss_fn = torch.nn.CrossEntropyLoss
+Optimizer = torch.optim.AdamW
 
 @dataclass(frozen=True)
 class TrainConfig:
     epochs: int = 100
-    batch_size: int = 2048 * 4
+    batch_size: int = 10
     lr: float = 1e-3
     weight_decay: float = 0.9
-    loss_fn: str = 'CrossEntropyLoss'
-    optimizer: str = 'AdamW'
+    loss_fn: str = Loss_fn.__name__
+    optimizer: str = Optimizer.__name__
     eval_interval: int = 1
     checkpoint_interval: int = 1
     shuffle: bool = True

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # train.py
-from typing import Iterator, Type
+from typing import Iterator
 from config.config import config, Config, EXPERIMENT_NAME
 from src.types.valid_paths import VALID_PATHS
 from src.utils.logging import setup_logger
@@ -9,6 +9,7 @@ from src.datasets.quartile_dataset import QuartileDataset
 from src.models.registry import get_model
 
 from concurrent.futures import ThreadPoolExecutor
+import os
 import mlflow
 import torch
 import torch.nn as nn
@@ -50,9 +51,36 @@ def init_dataloader(
     )
     return dataloader
 
+def get_params(params):
+    """ Get params from dict, ignore clutter """
+    ignore_keys = ['name', 'optimizer', 'last_epoch', 'step_count']
+    return {k:v for k,v in params.items() if k not in ignore_keys and not str(k).startswith('_')}.items()
+
+def get_scheduler_params(scheduler):
+    """ Fetch and format scheduler (and sub-scheduler) parameters """
+    params = {}
+    params['name'] = type(scheduler).__name__
+    if hasattr(scheduler, '_schedulers'):
+        params['names'] = []
+        params['milestones'] = scheduler._milestones
+        for i, sub_scheduler in enumerate(scheduler._schedulers):
+            params['names'].append(type(sub_scheduler).__name__)
+            sub_params = get_scheduler_params(sub_scheduler)
+            params.update({f'{i}-{sub_params["name"]}-{k}':v for k,v in get_params(sub_params)})
+    else:
+        params.update(get_params(scheduler.__dict__))
+
+    return params
+
+def get_optim_params(optimizer):
+    """ Placeholder for optimizer param getter """
+    # optim params currenty in config.train
+    pass
+
 def init_mlflow(
         model_name: str,
         data_path: str,
+        scheduler,
         tracking_uri: str = "http://127.0.0.1:5000"
     ):
 
@@ -65,6 +93,8 @@ def init_mlflow(
         mod_params = {f'{k}-{sk}': val for sk, val in v.__dict__.items()}
         param_dict.update(mod_params)
     param_dict['data-raw'] = str(param_dict['data-raw']) + data_path
+    scheduler_params = get_scheduler_params(scheduler)
+    param_dict.update({f'scheduler-{k}':v for k,v in scheduler_params.items()})
     mlflow.log_params(param_dict)
     return mlf_experiment, mlf_run
 
@@ -108,6 +138,7 @@ def init_progress(disable=False) -> tuple[Progress, ...]:
 
     epoch_progress.start()
     example_progress.start()
+    eval_example_progress.start()
     #mem_util_progress.start() # no report on strix halo
     return epoch_progress, example_progress, eval_example_progress, mem_util_progress
 
@@ -172,27 +203,6 @@ def init_mtrack_params(
     )
     return train_logits, train_y, train_loss, test_logits, test_y, test_loss
 
-def init_loss_fun(config: Config = config):
-    valid_loss_funcs = {
-        'CrossEntropyLoss' : nn.CrossEntropyLoss()
-    } 
-    if config.train.loss_fn not in valid_loss_funcs.keys():
-        raise ValueError(f'Loss Function {config.train.loss_fn} not expected, select from {", ".join(valid_loss_funcs.keys())}')
-    return valid_loss_funcs[config.train.loss_fn]
-
-def init_optimizer(model: nn.Module,
-                   config: Config = config
-                   )-> Type[torch.optim.Optimizer]:
-    valid_optimizers = {
-        'AdamW': torch.optim.AdamW(
-            model.parameters(),
-            lr=config.train.lr,
-            weight_decay=config.train.weight_decay,
-        ),
-    }
-    if config.train.optimizer not in valid_optimizers.keys():
-        raise ValueError(f'Optimizer {config.train.optimizer} not expected, select from {", ".join(valid_optimizers.keys())}')
-    return valid_optimizers[config.train.optimizer]
 
 def plusN_iterator(iterator: Iterator[tuple[torch.Tensor, ...]], extra_iters: int) -> Iterator[tuple[torch.Tensor, ...]]:
     for i, entry in enumerate(iterator):
@@ -202,6 +212,7 @@ def plusN_iterator(iterator: Iterator[tuple[torch.Tensor, ...]], extra_iters: in
         yield torch.nan, torch.tensor(float('nan')), torch.tensor(float('nan'))
 
 def eval_model(
+    epoch: int,
     model: nn.Module,
     loss_fn,
     dataloader: DataLoader,
@@ -215,11 +226,9 @@ def eval_model(
     forward_finished = torch.cuda.Event()
     batch_copy_finished = torch.cuda.Event()
     output_copy_finished = torch.cuda.Event()
-    example_progress.start()
 
     model.eval()
     with torch.no_grad():
-        example_progress.update(examples_done, completed=0)
         data_iterator = plusN_iterator(iter(dataloader), extra_iters=1)
         with torch.cuda.stream(copy_stream):
             batch_i, current_X, current_y = next(data_iterator)
@@ -245,7 +254,7 @@ def eval_model(
                 if not torch.any(torch.isnan(next_X)):
                     metric_tracker.log_metric('test_loss', loss_cpu, 1)
                     metric_tracker.process_values((current_y, out.detach()), ('test_y', 'test_logits'))
-                    mlflow.log_metric('test_loss', loss_cpu, step=batch_i * config.train.batch_size, synchronous=False)
+                    mlflow.log_metric('test_loss', loss_cpu, step=(epoch - 1) * batch_i * config.train.batch_size, synchronous=False)
                 output_copy_finished.record()
                 current_X = next_X_gpu.long()
                 current_y = next_y_gpu.long()
@@ -259,21 +268,34 @@ def eval_model(
         prefix='test'
     )
 
-    example_progress.update(examples_done, completed=0)
-
 @app.command()
 def main(
     data_path: VALID_PATHS = typer.Argument( 
         help='data path relative to config.data.staged'),
+    artifact_path: str = '/home/fnoble/Dropbox/experiment-tracking/artifacts',
     testing: bool = False,
     progress: bool = True,
-    use_gpu: bool = True,
+    gpu: bool = True,
 ) -> None:
     " Main Loop "
-    device: torch.device = torch.device('cuda') if torch.cuda.is_available() and use_gpu else torch.device('cpu')
+    from config.config import Loss_fn, Optimizer, init_lr_scheduler 
+    device: torch.device = torch.device('cuda') if torch.cuda.is_available() and gpu else torch.device('cpu')
     logger.info(f'Running on {device}{" TESTING" if testing else ""}')
 
     model = get_model(config.model.model_name)(config.model, device, torch.float32)
+    loss_fn = Loss_fn()
+    optimizer = Optimizer(
+        model.parameters(),
+        lr = config.train.lr,
+        weight_decay = config.train.weight_decay,
+    )
+
+    scheduler = init_lr_scheduler(optimizer)
+    mlf_experiment, mlf_run = init_mlflow(
+        model_name=model.MODEL_NAME,
+        data_path=data_path,
+        scheduler=scheduler,
+    )
 
     train_dataset = QuartileDataset(
         data_path=str(config.data.staged / data_path),
@@ -307,10 +329,6 @@ def main(
         device=device,
         buffer=False,
     )
-    mlf_experiment, mlf_run = init_mlflow(
-        model.MODEL_NAME,
-        data_path,
-    )
 
     executor = ThreadPoolExecutor(max_workers=2)
     epoch_progress, example_progress, eval_example_progress, mem_util_progress = init_progress(disable = not progress) 
@@ -321,17 +339,19 @@ def main(
     if torch.cuda.is_available():
         _, max_mem = torch.cuda.mem_get_info()
     mem_used = mem_util_progress.add_task('Mem Util', total=max_mem* (1/(1024**2)))
+
     compute_stream = torch.cuda.Stream()
     copy_stream = torch.cuda.Stream()
     forward_finished = torch.cuda.Event()
     batch_copy_finished = torch.cuda.Event()
     output_copy_finished = torch.cuda.Event()
-    
-    loss_fn = init_loss_fun()
-    optimizer = init_optimizer(model)
 
     for epoch in range(1, config.train.epochs + 1):
-        example_progress.update(examples_done, completed=0)
+        model.train()
+
+        example_progress.reset(examples_done, description='Train examps', total=len(train_dataloader) * config.train.batch_size)
+        eval_example_progress.reset(examples_done, description='Eval examps', total=len(test_dataloader) * config.train.batch_size)
+
         train_iterator = plusN_iterator(iter(train_dataloader), extra_iters=1)
         with torch.cuda.stream(copy_stream):
             batch_i, current_X, current_y = next(train_iterator)
@@ -360,7 +380,7 @@ def main(
                 if not torch.any(torch.isnan(next_X)):
                     metric_tracker.log_metric('train_loss', loss_cpu, 1)
                     metric_tracker.process_values((current_y, out.detach()), ('train_y', 'train_logits'))
-                    mlflow.log_metric('train_loss', loss_cpu, step=batch_i * config.train.batch_size, synchronous=False)
+                    mlflow.log_metric('train_loss', loss_cpu, step=(epoch - 1) * batch_i * config.train.batch_size, synchronous=False)
                     executor.submit(isnan_async, loss_cpu)
                 output_copy_finished.record()
                 current_X = next_X_gpu.long()
@@ -376,9 +396,11 @@ def main(
             y_store_name='train_y',
             prefix='train'
         )
-       
+        scheduler.step() 
+
         if epoch % config.train.eval_interval == 0:
             eval_model(
+                epoch,
                 model,
                 loss_fn,
                 test_dataloader,
@@ -389,9 +411,13 @@ def main(
                 copy_stream,
                 device,
                     )
+
         if epoch & config.train.checkpoint_interval == 0:
-            pass
-            # checkpoint here
+            save_dir = os.path.join(artifact_path, str(mlf_run.info.run_id))
+            save_path = os.path.join(save_dir, f'epoch-{epoch}.pt')
+            os.makedirs(save_dir, exist_ok=True)
+            checkpoint = model.state_dict()
+            torch.save(checkpoint, save_path)
             # save model state and run id, load each on restart (pass as option)
 
         metrics = metric_tracker.report(
