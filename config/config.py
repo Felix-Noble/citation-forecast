@@ -19,9 +19,9 @@ Optimizer = torch.optim.AdamW
 
 @dataclass(frozen=True)
 class TrainConfig:
-    epochs: int = 100
-    batch_size: int = 2048 
-    lr: float = 5e-4
+    epochs: int = 11
+    batch_size: int = 20 
+    lr: float = 1e-9#5e-4
     weight_decay: float = 0.9
     loss_fn: str = Loss_fn.__name__
     optimizer: str = Optimizer.__name__
@@ -57,6 +57,10 @@ def init_lr_scheduler(
     optimizer,
 ):
     milestones = [10]
+    sum = 0
+    for x in milestones:
+        sum += x
+        assert config.train.epochs != sum
 
     warmup_scheduler = torch.optim.lr_scheduler.LinearLR(
         optimizer, 
