@@ -8,22 +8,44 @@ from src.metric_trackers.classification_tracker import ClassificationTracker
 from src.datasets.quartile_dataset import QuartileDataset 
 from src.models.registry import get_model
 
-from concurrent.futures import ThreadPoolExecutor
-import os
-import mlflow
 import torch
 import torch.nn as nn
 from torch import Tensor
 from torch.utils.data import Dataset, DataLoader
+from concurrent.futures import ThreadPoolExecutor
+import os
+import mlflow
 from rich.progress import Progress, TextColumn, BarColumn, TimeElapsedColumn, TimeRemainingColumn
 from rich.traceback import install
 import typer
 from pathlib import Path
 from logging import getLogger
+# This disables the specific 'fused' operations that cause 'gemm_and_bias'
+
+# On ROCm, this forces the dispatcher to avoid the 'Lt' paths
+# 1. Disable Flash Attention (This uses CK/Triton and is likely the cause)
+#torch.backends.cuda.enable_flash_sdp(False)
+#
+## 2. Enable Memory Efficient Attention (Usually works on RDNA)
+#torch.backends.cuda.enable_mem_efficient_sdp(True)
+#
+## 3. Enable Math Attention (The failsafe - slowest but guaranteed to work)
+#torch.backends.cuda.enable_math_sdp(True)
+
+# env variables to spoof hipblaslt into working 
+#HSA_OVERRIDE_GFX_VERSION=11.0.0 
+#ROCBLAS_USE_HIPBLASLT=1 
+#TORCH_BLAS_PREFER_HIPBLASLT=1
+if hasattr(torch.backends.cuda, "preferred_blas_library"):
+    torch.backends.cuda.preferred_blas_library("ck") 
+
+# float32 precision
+#torch.backends.cuda.matmul.allow_tf32 = False 
+torch.set_float32_matmul_precision('high')
 
 logger = getLogger(Path(__file__).stem)
 _ = setup_logger(logger, config.logging)
- 
+
 app = typer.Typer(pretty_exceptions_enable=False)
 install(
     show_locals=False,       # Turn off local variables (reduces noise)
@@ -275,6 +297,7 @@ def main(
     data_path: VALID_PATHS = typer.Argument( 
         help='data path relative to config.data.staged'),
     artifact_path: str = '/home/fnoble/Dropbox/experiment-tracking/artifacts',
+    compile: bool = False,
     testing: bool = False,
     progress: bool = True,
     gpu: bool = True,
@@ -285,6 +308,9 @@ def main(
     logger.info(f'Running on {device}{" TESTING" if testing else ""}')
 
     model = get_model(config.model.model_name)(config.model, device, torch.float32)
+    if compile:
+        model.compile(fullgraph=False, mode='default')
+
     loss_fn = Loss_fn()
     optimizer = Optimizer(
         model.parameters(),
@@ -415,7 +441,7 @@ def main(
                     )
 
         if epoch & config.train.checkpoint_interval == 0:
-            save_dir = os.path.join(artifact_path, str(mlf_run.info.run_id))
+            save_dir = os.path.join(artifact_path, EXPERIMENT_NAME, str(mlf_run.info.run_id))
             save_path = os.path.join(save_dir, f'epoch-{epoch}.pt')
             os.makedirs(save_dir, exist_ok=True)
             checkpoint = model.state_dict()
