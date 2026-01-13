@@ -433,7 +433,7 @@ def main(
             prefix='train'
         )
 
-        if epoch & config.train.checkpoint_interval == 0:
+        if epoch % config.train.checkpoint_interval == 0:
             save_dir = os.path.join(artifact_path, EXPERIMENT_NAME, str(mlf_run.info.run_id))
             save_path = os.path.join(save_dir, f'epoch-{epoch}.pt')
             os.makedirs(save_dir, exist_ok=True)
