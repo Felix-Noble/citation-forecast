@@ -126,6 +126,10 @@ def init_mlflow(
     mlflow.log_params(param_dict)
     return mlf_experiment, mlf_run
 
+def log_lrs(scheduler, step: int):
+    lrs = {f'lr-{i}':v for i,v in enumerate(scheduler.get_last_lr())}
+    mlflow.log_metrics(lrs, step=step)
+   
 def init_progress(disable=False) -> tuple[Progress, ...]:
     epoch_progress = Progress(
         TextColumn('[bold blue] {task.description}', justify='left'),
@@ -314,7 +318,7 @@ def main(
     device: torch.device = torch.device('cuda') if torch.cuda.is_available() and gpu else torch.device('cpu')
     logger.info(f'Running on {device}{" TESTING" if testing else ""}')
 
-    model = get_model(config.model.model_name)(config.model, device, torch.float32)
+    model = get_model(config.model)(config.model, device, torch.float32)
     if compile:
         model.compile(fullgraph=False, mode='default')
 
@@ -326,6 +330,7 @@ def main(
     )
 
     scheduler = init_lr_scheduler(optimizer)
+    _ = log_lrs(scheduler, 0)
     mlf_experiment, mlf_run = init_mlflow(
         model_name=model.MODEL_NAME,
         data_path=data_path,
@@ -441,7 +446,8 @@ def main(
             torch.save(checkpoint, save_path)
             mlflow.log_artifact(save_path)
             # save model state and run id, load each on restart (pass as option)
-
+        
+        _ = log_lrs(scheduler, epoch * examples_per_epoch)
         scheduler.step() 
 
         if epoch % config.train.eval_interval == 0:
