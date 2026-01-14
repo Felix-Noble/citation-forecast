@@ -1,3 +1,5 @@
+from pydantic import ValidationError
+from config.config import Config
 import torch.nn as nn
 import importlib
 import inspect
@@ -24,8 +26,10 @@ def build_registry() -> dict[str, type[nn.Module]]:
     
     return registry
 
-def get_model(model_name: str) -> type[nn.Module]:
-    model_name = model_name.lower()
+def get_model(
+    model_config: Config,
+) -> type[nn.Module]:
+    model_name = model_config.model_name.lower()
     alias_registry = {
         'r_rnn' : ['real_rnn', 'real_recurrent']
     }
@@ -39,6 +43,13 @@ def get_model(model_name: str) -> type[nn.Module]:
     if model_name not in registry.keys():
         raise KeyError(f'Model "{model_name}" name not found. Available models: [ {", ".join(registry.keys())} ]')
     model = registry[model_name]
-    # TODO: check model config with pyright here
+
+    # verify model config
+    try:
+        _ = model.config_schema(**model_config.__dict__) # pyright: ignore [reportAttributeAccessIssue]
+    except ValidationError as e:
+        for error in e.errors():
+            print(error)
+            quit()
 
     return model 

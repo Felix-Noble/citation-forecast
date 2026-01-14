@@ -1,10 +1,20 @@
-from dataclasses import dataclass
+from pydantic import BaseModel, PositiveInt 
 import torch
 import torch.nn as nn
 from torch import Tensor
 
+class ConfigSchema(BaseModel):
+    model_name: str
+    vocab_size: PositiveInt 
+    eos_token: PositiveInt
+    n_layers: PositiveInt
+    embed_dim: PositiveInt
+    attention_dim: PositiveInt
+    n_out: PositiveInt
+
 class R_RNN(nn.Module):
     MODEL_NAME = 'r_rnn'
+    config_schema = ConfigSchema
     def __init__(self, 
                  model_config,
                  device: torch.device,
