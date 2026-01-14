@@ -83,6 +83,41 @@ class R_RNN_Fast(nn.Module):
 
 if __name__ == '__main__':
     import torch
+    # test 1 : bmm the whole length (mult by eos_one_got for next atention)
+    # text 2: recursively trace down each batch item individually
+    # test1 compiles? ; test2 will not (variable length)
+    def recursive_mm_1(x, eos_one_hot, next_attention):
+        # case 1: more than two tensore 
+        n = len(x)
+        if n > 2:
+            return torch.bmm(
+                recursive_mm_1(x[:n], eos_one_hot, next_attention),
+                recursive_mm_1(x[n:], eos_one_hot, next_attention)
+            )
+        # case 2: one tensor 
+        elif n < 2:
+            return x[0]
+
+        # base case: bmm of two tensors
+        return torch.bmm(x[0], x[1])
+
+    def recursive_mm_2(x, eos_one_hot):
+        # case 1: more than two tensore 
+        n = len(x)
+        if n > 2:
+            return torch.bmm(
+                recursive_mm_2(x[:n], eos_one_hot),
+                recursive_mm_2(x[n:], eos_one_hot)
+            )
+        # case 2: one tensor 
+        elif n < 2:
+            return x[0]
+
+        # base case: bmm of two tensors
+        return torch.bmm(x[0], x[1])
+
+
+    import torch
     x = torch.rand(2, 5, 1)
     B, T, *N  = x.shape
 
@@ -116,4 +151,8 @@ if __name__ == '__main__':
         # base case: launch bmm kernel for i and i+1
         # edge case: return tensor 
         # func def: snake along the function (though recursive for data dependency) via fixed indexs
+    # recursive function 
+    # base case len(2):  bmm
+    # case 1 : return 'end' tensor (single tensor)
+    # case 2: return recursive call on halved list
 
