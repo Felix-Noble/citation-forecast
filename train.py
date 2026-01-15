@@ -14,24 +14,17 @@ from torch import Tensor
 from torch.utils.data import Dataset, DataLoader
 from concurrent.futures import ThreadPoolExecutor
 import os
-import mlflow
 from rich.progress import Progress, TextColumn, BarColumn, TimeElapsedColumn, TimeRemainingColumn
 from rich.traceback import install
 import typer
 from pathlib import Path
 from logging import getLogger
-# This disables the specific 'fused' operations that cause 'gemm_and_bias'
+import mlflow
+tracking_uri = "http://127.0.0.1:5000"
+mlflow.set_tracking_uri(tracking_uri)
+mlflow.end_run()
 
-# On ROCm, this forces the dispatcher to avoid the 'Lt' paths
-# 1. Disable Flash Attention (This uses CK/Triton and is likely the cause)
-#torch.backends.cuda.enable_flash_sdp(False)
-#
-## 2. Enable Memory Efficient Attention (Usually works on RDNA)
-#torch.backends.cuda.enable_mem_efficient_sdp(True)
-#
-## 3. Enable Math Attention (The failsafe - slowest but guaranteed to work)
-#torch.backends.cuda.enable_math_sdp(True)
-
+# 3. Enable Math Attention (The failsafe - slowest but guaranteed to work)
 # env variables to spoof hipblaslt into working 
 #HSA_OVERRIDE_GFX_VERSION=11.0.0 
 #ROCBLAS_USE_HIPBLASLT=1 
@@ -40,15 +33,13 @@ from logging import getLogger
 #PYTORCH_TUNABLEOP_ENABLED=1
 #PYTORCH_TUNABLEOP_VERBOSE=1
 
-#if hasattr(torch.backends.cuda, "preferred_blas_library"):
-#    torch.backends.cuda.preferred_blas_library("cublas") 
-
-# float32 precision
-#torch.backends.cuda.matmul.allow_tf32 = False 
+torch.backends.cuda.matmul.allow_tf32 = False 
 torch.set_float32_matmul_precision('high')
 
 logger = getLogger(Path(__file__).stem)
 _ = setup_logger(logger, config.logging)
+
+logger.info(f'Mlflow connection established at {tracking_uri}') 
 
 app = typer.Typer(pretty_exceptions_enable=False)
 install(
@@ -105,17 +96,7 @@ def get_optim_params(optimizer):
     # optim params currenty in config.train
     pass
 
-def init_mlflow(
-        model_name: str,
-        data_path: str,
-        scheduler,
-        tracking_uri: str = "http://127.0.0.1:5000"
-    ):
-
-    mlflow.set_tracking_uri(tracking_uri)
-    mlf_experiment = mlflow.set_experiment(EXPERIMENT_NAME)
-    mlf_run = mlflow.start_run(run_name=model_name)
-    logger.info(f'Mlflow connection established at {tracking_uri}')
+def log_params(data_path, scheduler):
     param_dict = {}
     for k,v in config.__dict__.items():
         mod_params = {f'{k}-{sk}': val for sk, val in v.__dict__.items()}
@@ -124,7 +105,6 @@ def init_mlflow(
     scheduler_params = get_scheduler_params(scheduler)
     param_dict.update({f'scheduler-{k}':v for k,v in scheduler_params.items()})
     mlflow.log_params(param_dict)
-    return mlf_experiment, mlf_run
 
 def log_lrs(scheduler, step: int):
     lrs = {f'lr-{i}':v for i,v in enumerate(scheduler.get_last_lr())}
@@ -314,6 +294,7 @@ def main(
     gpu: bool = True,
 ) -> None:
     " Main Loop "
+
     from config.config import Loss_fn, Optimizer, init_lr_scheduler 
     device: torch.device = torch.device('cuda') if torch.cuda.is_available() and gpu else torch.device('cpu')
     logger.info(f'Running on {device}{" TESTING" if testing else ""}')
@@ -331,11 +312,6 @@ def main(
 
     scheduler = init_lr_scheduler(optimizer)
     _ = log_lrs(scheduler, 0)
-    mlf_experiment, mlf_run = init_mlflow(
-        model_name=model.MODEL_NAME,
-        data_path=data_path,
-        scheduler=scheduler,
-    )
 
     train_dataset = QuartileDataset(
         data_path=str(config.data.staged / data_path),
@@ -387,94 +363,97 @@ def main(
     batch_copy_finished = torch.cuda.Event()
     output_copy_finished = torch.cuda.Event()
 
-    for epoch in range(1, config.train.epochs + 1):
-        model.train()
+    mlflow.set_experiment(EXPERIMENT_NAME)
+    with mlflow.start_run(run_name=model.MODEL_NAME, nested=True):
+        log_params(data_path, scheduler)
 
-        example_progress.reset(examples_done, description='Train examps', total=len(train_dataloader) * config.train.batch_size)
-        eval_example_progress.reset(examples_done, description='Eval examps', total=len(test_dataloader) * config.train.batch_size)
+        for epoch in range(1, config.train.epochs + 1):
+            model.train()
 
-        train_iterator = plusN_iterator(iter(train_dataloader), extra_iters=1)
-        with torch.cuda.stream(copy_stream):
-            batch_i, current_X, current_y = next(train_iterator)
-            current_X = current_X.to(device, non_blocking=True).long()
-            current_y = current_y.to(device, non_blocking=True).long()
-            batch_copy_finished.record()
-            output_copy_finished.record()
+            example_progress.reset(examples_done, description='Train examps', total=len(train_dataloader) * config.train.batch_size)
+            eval_example_progress.reset(examples_done, description='Eval examps', total=len(test_dataloader) * config.train.batch_size)
 
-        for next_batch_i, next_X, next_y in train_iterator:
-            with torch.cuda.stream(compute_stream):
-                output_copy_finished.wait()
-                batch_copy_finished.wait()
-                out = model(current_X)
-                loss = loss_fn(out.squeeze(-1), current_y)
-                forward_finished.record() # 'forward' finished later to allow to loss -> cpu copy
-                loss.backward()
-                optimizer.step()
-                optimizer.zero_grad() 
-
+            train_iterator = plusN_iterator(iter(train_dataloader), extra_iters=1)
             with torch.cuda.stream(copy_stream):
-                next_X_gpu = next_X.to(device, non_blocking=True)
+                batch_i, current_X, current_y = next(train_iterator)
+                current_X = current_X.to(device, non_blocking=True).long()
+                current_y = current_y.to(device, non_blocking=True).long()
                 batch_copy_finished.record()
-                next_y_gpu = next_y.to(device, non_blocking=True)
-                forward_finished.wait()
-                loss_cpu = loss.detach().item()
-                if not torch.any(torch.isnan(next_X)):
-                    metric_tracker.log_metric('train_loss', loss_cpu, 1)
-                    metric_tracker.process_values((current_y, out.detach()), ('train_y', 'train_logits'))
-                    mlflow.log_metric('train_loss', loss_cpu, step = (epoch-1) * examples_per_epoch + batch_i * config.train.batch_size)
-                    executor.submit(isnan_async, loss_cpu)
                 output_copy_finished.record()
-                current_X = next_X_gpu.long()
-                current_y = next_y_gpu.long()
-                batch_i = next_batch_i
 
-            example_progress.update(examples_done, advance=config.train.batch_size)
-            mem_use, _ = torch.cuda.mem_get_info()
-            mem_util_progress.update(mem_used, complete=mem_use * (1/(1024**2)))
+            for next_batch_i, next_X, next_y in train_iterator:
+                with torch.cuda.stream(compute_stream):
+                    output_copy_finished.wait()
+                    batch_copy_finished.wait()
+                    out = model(current_X)
+                    loss = loss_fn(out.squeeze(-1), current_y)
+                    forward_finished.record() # 'forward' finished later to allow to loss -> cpu copy
+                    loss.backward()
+                    optimizer.step()
+                    optimizer.zero_grad() 
 
-        _ = metric_tracker.calc_metrics(
-            logit_store_name='train_logits',
-            y_store_name='train_y',
-            prefix='train'
-        )
+                with torch.cuda.stream(copy_stream):
+                    next_X_gpu = next_X.to(device, non_blocking=True)
+                    batch_copy_finished.record()
+                    next_y_gpu = next_y.to(device, non_blocking=True)
+                    forward_finished.wait()
+                    loss_cpu = loss.detach().item()
+                    if not torch.any(torch.isnan(next_X)):
+                        metric_tracker.log_metric('train_loss', loss_cpu, 1)
+                        metric_tracker.process_values((current_y, out.detach()), ('train_y', 'train_logits'))
+                        mlflow.log_metric('train_loss-batch', loss_cpu, step = (epoch-1) * examples_per_epoch + batch_i * config.train.batch_size)
+                        executor.submit(isnan_async, loss_cpu)
+                    output_copy_finished.record()
+                    current_X = next_X_gpu.long()
+                    current_y = next_y_gpu.long()
+                    batch_i = next_batch_i
 
-        if epoch % config.train.checkpoint_interval == 0:
-            save_dir = os.path.join(artifact_path, EXPERIMENT_NAME, str(mlf_run.info.run_id))
-            save_path = os.path.join(save_dir, f'epoch-{epoch}.pt')
-            os.makedirs(save_dir, exist_ok=True)
-            checkpoint = model.state_dict()
-            torch.save(checkpoint, save_path)
-            mlflow.log_artifact(save_path)
-            # save model state and run id, load each on restart (pass as option)
-        
-        _ = log_lrs(scheduler, epoch * examples_per_epoch)
-        scheduler.step() 
+                example_progress.update(examples_done, advance=config.train.batch_size)
+                mem_use, _ = torch.cuda.mem_get_info()
+                mem_util_progress.update(mem_used, complete=mem_use * (1/(1024**2)))
 
-        if epoch % config.train.eval_interval == 0:
-            eval_model(
-                step_offset=(epoch-1) * examples_per_epoch,
-                model=model,
-                loss_fn=loss_fn,
-                dataloader=test_dataloader,
-                example_progress=eval_example_progress,
-                examples_done=eval_examples_done,
-                metric_tracker=metric_tracker,
-                compute_stream=compute_stream,
-                copy_stream=copy_stream,
-                device=device,
-                    )
+            _ = metric_tracker.calc_metrics(
+                logit_store_name='train_logits',
+                y_store_name='train_y',
+                prefix='train'
+            )
 
-        metrics = metric_tracker.report(
-            progress_bar=epoch_progress, 
-            epoch=epoch,
-        )
-        # filter metrics logged in main loop
-        metrics = {k:v for k,v in metrics.items() if 'loss' not in k}
-        mlflow.log_metrics(metrics, step = epoch * examples_per_epoch, synchronous=False)
+            if epoch % config.train.checkpoint_interval == 0:
+                save_dir = os.path.join(artifact_path, EXPERIMENT_NAME, str(mlf_run.info.run_id))
+                save_path = os.path.join(save_dir, f'epoch-{epoch}.pt')
+                os.makedirs(save_dir, exist_ok=True)
+                checkpoint = model.state_dict()
+                torch.save(checkpoint, save_path)
+                mlflow.log_artifact(save_path)
+                # save model state and run id, load each on restart (pass as option)
+            
+            _ = log_lrs(scheduler, epoch * examples_per_epoch)
+            scheduler.step() 
 
-        epoch_progress.update(epochs_done, advance=1)
+            if epoch % config.train.eval_interval == 0:
+                eval_model(
+                    step_offset=(epoch-1) * examples_per_epoch,
+                    model=model,
+                    loss_fn=loss_fn,
+                    dataloader=test_dataloader,
+                    example_progress=eval_example_progress,
+                    examples_done=eval_examples_done,
+                    metric_tracker=metric_tracker,
+                    compute_stream=compute_stream,
+                    copy_stream=copy_stream,
+                    device=device,
+                        )
 
-        metric_tracker.clear()
+            metrics = metric_tracker.report(
+                progress_bar=epoch_progress, 
+                epoch=epoch,
+            )
+            # filter metrics logged in main loop
+            mlflow.log_metrics(metrics, step = epoch, synchronous=False)
+
+            epoch_progress.update(epochs_done, advance=1)
+
+            metric_tracker.clear()
 
 if __name__ == '__main__':
     app()
