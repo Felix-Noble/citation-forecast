@@ -6,7 +6,7 @@ EXPERIMENT_NAME = 'AF-Psych-S'
 
 @dataclass(frozen=True)
 class ModelConfig:
-    model_name:str = 'R_RNN'
+    model_name:str = 'R_RNN_Fast'
     vocab_size:int = 201_088
     eos_token: int = 200_002
     embed_dim: int = 32

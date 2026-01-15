@@ -2,13 +2,56 @@ from pydantic import BaseModel, PositiveInt
 import torch
 import torch.nn as nn
 from torch import Tensor
-
-def recursive_mm(x: list[Tensor], eos_one_hot):
+    # test 1 : bmm the whole length (mult by eos_one_got for next atention)
+    # text 2: recursively trace down each batch item individually
+    # test1 compiles? ; test2 will not (variable length)
+def recursive_mm_1(x, eos_one_hot, attention_mod):
+    # case 1: more than two tensore 
     n = len(x)
     if n > 2:
-        return recursive_mm(x[n/2:], eos_one_hot), recursive_mm(x[:n/2], eos_one_hot)
+        half_n = int(n/2)
+        return torch.bmm(
+            recursive_mm_1(x[:half_n], eos_one_hot, attention_mod),
+            recursive_mm_1(x[half_n:], eos_one_hot, attention_mod)
+        )
+    # case 2: one tensor 
+    elif n < 2:
+        return x[0]
 
-    return x[0] @ x[1]
+    # base case: bmm of two tensors
+    return torch.bmm(x[0], x[1])
+
+def parallel_matrix_product_iterative(matrices):
+    curr = matrices
+    while curr.shape[0] > 1:
+        L = curr.shape[0]
+        if L % 2 == 1:
+            # Handle odd remainder by multiplying it into the first pair
+            # or saving it for the end.
+            remainder = curr[-1:]
+            curr = curr[:-1]
+        else:
+            remainder = None
+            
+        # Batch multiply pairs
+        curr = curr.view(L // 2, 2, *curr.shape[1:])
+        curr = torch.matmul(curr[:, 0], curr[:, 1])
+        
+        if remainder is not None:
+            # This is a bit simplified; logic for odd L in scans 
+            # can get tricky to keep perfectly balanced.
+            curr = torch.cat([curr, remainder], dim=0)
+    return curr 
+
+def recursive_mm_b(x):
+    n = x.shape[0]
+    if n >= 2:
+        return torch.bmm(
+            recursive_mm_b(x[:n // 2]),
+            recursive_mm_b(x[n // 2:]),
+                )
+    if n < 2:
+        return x.squeeze(0)
 
 class ConfigSchema(BaseModel):
     model_name: str
@@ -58,21 +101,21 @@ class R_RNN_Fast(nn.Module):
 
     def forward(self, x: Tensor):
         eos_one_hot = torch.zeros_like(x)
-        max_eos_idx = torch.max(torch.where(x == self.config.eos_token)[1])
+        eos_t_index = torch.where(x == self.config.eos_token)[1]
         eos_one_hot[x == self.config.eos_token] = 1
         embeddings = self.embed(x)
         B, T, C = embeddings.shape
         attention = torch.ones((B, self.config.attention_dim, 1), device=self.device, dtype=self.dtype)
+
         for layer in range(self.config.n_layers):
             embed_projections = self.embed_proj(embeddings).unsqueeze(-1)
             embed_transforms = embed_projections @ embed_projections.transpose(-1, -2)
-            next_attention = torch.zeros_like(attention.squeeze(-1))
-            for t in range(max_eos_idx):
-                attention = embed_transforms[:, t, :, :] @ attention
-                attention = nn.functional.rms_norm(attention, (attention.shape[-1], ))
-                next_attention += attention.squeeze(-1) * eos_one_hot[:, t].unsqueeze(-1)
+            embed_transforms = embed_transforms.permute(1, 0, 2, 3)
+            
+            attention_mod = recursive_mm_b(embed_transforms)
+            #attention_mod = parallel_matrix_product_iterative(embed_transforms).squeeze(0)
+            attention = attention_mod @ attention
 
-            attention = next_attention.unsqueeze(-1).clone()
             attention_projection = self.attention_proj(attention.squeeze(-1)).unsqueeze(-1)
             attention_transformation = attention_projection @ attention_projection.transpose(-1, -2)
             embeddings = attention_transformation.unsqueeze(1).expand(-1, T, -1, -1) @ embeddings.unsqueeze(-1)
@@ -81,78 +124,70 @@ class R_RNN_Fast(nn.Module):
         out = self.head(attention.squeeze(-1)) 
         return out
 
+class ModelConfig:
+    model_name:str = 'R_RNN'
+    vocab_size:int = 201_088
+    eos_token: int = 200_002
+    embed_dim: int = 512 
+    attention_dim: int = 512
+    n_layers: int = 2
+    n_out: int = 5
+
 if __name__ == '__main__':
     import torch
-    # test 1 : bmm the whole length (mult by eos_one_got for next atention)
-    # text 2: recursively trace down each batch item individually
-    # test1 compiles? ; test2 will not (variable length)
-    def recursive_mm_1(x, eos_one_hot, next_attention):
-        # case 1: more than two tensore 
-        n = len(x)
-        if n > 2:
-            return torch.bmm(
-                recursive_mm_1(x[:n], eos_one_hot, next_attention),
-                recursive_mm_1(x[n:], eos_one_hot, next_attention)
-            )
-        # case 2: one tensor 
-        elif n < 2:
-            return x[0]
-
-        # base case: bmm of two tensors
-        return torch.bmm(x[0], x[1])
-
-    def recursive_mm_2(x, eos_one_hot):
-        # case 1: more than two tensore 
-        n = len(x)
-        if n > 2:
-            return torch.bmm(
-                recursive_mm_2(x[:n], eos_one_hot),
-                recursive_mm_2(x[n:], eos_one_hot)
-            )
-        # case 2: one tensor 
-        elif n < 2:
-            return x[0]
-
-        # base case: bmm of two tensors
-        return torch.bmm(x[0], x[1])
-
-
-    import torch
-    x = torch.rand(2, 5, 1)
-    B, T, *N  = x.shape
-
-    eos_one_hot = torch.zeros(B, T)
-    eos_one_hot[0, -2] = 1
-    eos_one_hot[1, -3] = 1
-
-    eos_idx = torch.where(eos_one_hot == 1)
-    sort_index = sorted(list(range(B)), key = lambda i : eos_idx[1][i]) 
-    eos_idx_sorted = eos_idx[0][sort_index]
-
-    x = x[eos_idx_sorted, :,  :]
-
-    x = x.permute(1, 0, 2)
-    eos_batch_idx = eos_idx[1][sort_index]
-    t_points = []
-    # only iterate until the max time point until all eos reached 
-    for i, ts in enumerate(x):
-        in_seq = ts
-        t_points.append(ts[eos_batch_idx >= i, :])
-    
-    for i in range(0, T - (T%2), 2):
-        print(t_points[i])
-        print(t_points[i+1])
-
-        a = t_points[i]
-        b = t_points[i+1]
-
-        print(a.shape == b.shape)
+    import torch.utils.benchmark as benchmark
+    from real_rnn import R_RNN 
+    from torch.profiler import profile, record_function, ProfilerActivity
+    config = ModelConfig()
+    torch.manual_seed(2026)
+    def benchmark_model(model, input_data):
+        t = benchmark.Timer(
+            stmt='model(input_data)',
+            setup='import torch',
+            globals={'model': model, 'input_data': input_data},
+            num_threads=16
+        )
         
-        # base case: launch bmm kernel for i and i+1
-        # edge case: return tensor 
-        # func def: snake along the function (though recursive for data dependency) via fixed indexs
-    # recursive function 
-    # base case len(2):  bmm
-    # case 1 : return 'end' tensor (single tensor)
-    # case 2: return recursive call on halved list
+        return t.blocked_autorange(min_run_time=5)
 
+    B, T = 16, 500
+    print('batch/time', B, T)
+    x = torch.randint(0, 200_000, (B, T), device='cuda', dtype=torch.long)
+    eos_idxs = torch.randint(200, T-1, (B,))
+    for i, idx in enumerate(eos_idxs):
+        x[i, -1] = config.eos_token
+        #x[i, idx+1:] = 0
+    torch.set_float32_matmul_precision('highest')
+
+    test = 'new'
+    run_profile = False 
+    if test == 'old':
+        print('Testing old\n')
+        model = R_RNN(config, torch.device('cuda'), torch.float32)
+    elif test == 'new':
+        print('Testing new\n')
+        model = R_RNN_Fast(config, torch.device('cuda'), torch.float32) 
+        model = torch.compile(model, fullgraph=True, mode='default')
+
+    if run_profile:
+        supported = torch.profiler.supported_activities()
+        print(f"Supported Activities: {supported}")
+        with profile(
+            activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA],
+            record_shapes=True,
+            profile_memory=True, # Optional: if you want to see allocations
+            with_stack=True      # Optional: correlates kernels to Python code lines
+        ) as prof:
+            with record_function("test"):
+                # Perform your operations here
+                out = model(x)
+                torch.cuda.synchronize() # Optional: keeps everything in the trace window
+        prof.export_chrome_trace("trace.json")
+
+    else:
+        with torch.no_grad():
+            model.eval()
+            results = benchmark_model(model, x)
+            print(type(model).__name__)
+            print(results)
+        
