@@ -6,12 +6,12 @@ EXPERIMENT_NAME = 'AF-Psych-M-test'
 
 @dataclass(frozen=True)
 class ModelConfig:
-    model_name:str = 'R_RNN_Fast'
+    model_name:str = 'rf_rnn_static'
     vocab_size:int = 201_088
     eos_token: int = 200_002
     embed_dim: int = 64
     attention_dim: int = 64
-    n_layers: int = 7
+    n_layers: int = 4
     n_out: int = 5
 
 Loss_fn = torch.nn.CrossEntropyLoss
@@ -20,8 +20,8 @@ Optimizer = torch.optim.AdamW
 @dataclass(frozen=True)
 class TrainConfig:
     epochs: int = 100
-    batch_size: int = 128 * 2
-    lr: float = 1e-4
+    batch_size: int = 256
+    lr: float = 1e-3
     weight_decay: float = 0.9
     loss_fn: str = Loss_fn.__name__
     optimizer: str = Optimizer.__name__
