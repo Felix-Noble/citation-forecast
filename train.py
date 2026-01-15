@@ -227,7 +227,6 @@ def plusN_iterator(iterator: Iterator[tuple[torch.Tensor, ...]], extra_iters: in
         yield torch.nan, torch.tensor(float('nan')), torch.tensor(float('nan'))
 
 def eval_model(
-    step_offset:int,
     model: nn.Module,
     loss_fn,
     dataloader: DataLoader,
@@ -269,11 +268,9 @@ def eval_model(
                 if not torch.any(torch.isnan(next_X)):
                     metric_tracker.log_metric('test_loss', loss_cpu, 1)
                     metric_tracker.process_values((current_y, out.detach()), ('test_y', 'test_logits'))
-                    mlflow.log_metric('test_loss', loss_cpu, step = step_offset + (batch_i * config.train.batch_size))
                 output_copy_finished.record()
                 current_X = next_X_gpu.long()
                 current_y = next_y_gpu.long()
-                batch_i = next_batch_i
 
             example_progress.update(examples_done, advance=config.train.batch_size)
 
@@ -301,7 +298,7 @@ def main(
 
     model = get_model(config.model)(config.model, device, torch.float32)
     if compile:
-        model.compile(fullgraph=False, mode='default')
+        model.compile(fullgraph=True, mode='default')
 
     loss_fn = Loss_fn()
     optimizer = Optimizer(
@@ -433,7 +430,6 @@ def main(
 
             if epoch % config.train.eval_interval == 0:
                 eval_model(
-                    step_offset=(epoch-1) * examples_per_epoch,
                     model=model,
                     loss_fn=loss_fn,
                     dataloader=test_dataloader,
@@ -449,7 +445,7 @@ def main(
                 progress_bar=epoch_progress, 
                 epoch=epoch,
             )
-            # filter metrics logged in main loop
+
             mlflow.log_metrics(metrics, step = epoch, synchronous=False)
 
             epoch_progress.update(epochs_done, advance=1)
