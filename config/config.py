@@ -2,7 +2,7 @@ import torch
 from datetime import datetime
 from dataclasses import dataclass
 from pathlib import Path
-EXPERIMENT_NAME = 'AF-Psych-S'
+EXPERIMENT_NAME = 'AF-Psych-M-test'
 
 @dataclass(frozen=True)
 class ModelConfig:

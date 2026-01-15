@@ -2,46 +2,6 @@ from pydantic import BaseModel, PositiveInt
 import torch
 import torch.nn as nn
 from torch import Tensor
-    # test 1 : bmm the whole length (mult by eos_one_got for next atention)
-    # text 2: recursively trace down each batch item individually
-    # test1 compiles? ; test2 will not (variable length)
-def recursive_mm_1(x, eos_one_hot, attention_mod):
-    # case 1: more than two tensore 
-    n = len(x)
-    if n > 2:
-        half_n = int(n/2)
-        return torch.bmm(
-            recursive_mm_1(x[:half_n], eos_one_hot, attention_mod),
-            recursive_mm_1(x[half_n:], eos_one_hot, attention_mod)
-        )
-    # case 2: one tensor 
-    elif n < 2:
-        return x[0]
-
-    # base case: bmm of two tensors
-    return torch.bmm(x[0], x[1])
-
-def parallel_matrix_product_iterative(matrices):
-    curr = matrices
-    while curr.shape[0] > 1:
-        L = curr.shape[0]
-        if L % 2 == 1:
-            # Handle odd remainder by multiplying it into the first pair
-            # or saving it for the end.
-            remainder = curr[-1:]
-            curr = curr[:-1]
-        else:
-            remainder = None
-            
-        # Batch multiply pairs
-        curr = curr.view(L // 2, 2, *curr.shape[1:])
-        curr = torch.matmul(curr[:, 0], curr[:, 1])
-        
-        if remainder is not None:
-            # This is a bit simplified; logic for odd L in scans 
-            # can get tricky to keep perfectly balanced.
-            curr = torch.cat([curr, remainder], dim=0)
-    return curr 
 
 def recursive_mm_b(x):
     n = x.shape[0]
@@ -50,8 +10,16 @@ def recursive_mm_b(x):
             recursive_mm_b(x[:n // 2]),
             recursive_mm_b(x[n // 2:]),
                 )
-    if n < 2:
-        return x.squeeze(0)
+    return x.squeeze(0)
+
+def recursive_mm(x):
+    n = x.shape[0]
+    if n >= 2:
+        return torch.matmul(
+            recursive_mm(x[:n//2]),
+            recursive_mm(x[n//2:])
+        )
+    return x.squeeze(0)
 
 class ConfigSchema(BaseModel):
     model_name: str
@@ -111,7 +79,6 @@ class R_RNN_Fast(nn.Module):
             embed_projections = self.embed_proj(embeddings).unsqueeze(-1)
             embed_transforms = embed_projections @ embed_projections.transpose(-1, -2)
             embed_transforms = embed_transforms.permute(1, 0, 2, 3)
-            
             attention_mod = recursive_mm_b(embed_transforms)
             #attention_mod = parallel_matrix_product_iterative(embed_transforms).squeeze(0)
             attention = attention_mod @ attention
