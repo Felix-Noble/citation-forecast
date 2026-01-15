@@ -9,9 +9,9 @@ class ModelConfig:
     model_name:str = 'R_RNN_Fast'
     vocab_size:int = 201_088
     eos_token: int = 200_002
-    embed_dim: int = 32
-    attention_dim: int = 32
-    n_layers: int = 4
+    embed_dim: int = 64
+    attention_dim: int = 64
+    n_layers: int = 7
     n_out: int = 5
 
 Loss_fn = torch.nn.CrossEntropyLoss
@@ -19,14 +19,14 @@ Optimizer = torch.optim.AdamW
 
 @dataclass(frozen=True)
 class TrainConfig:
-    epochs: int = 200
-    batch_size: int = 1024
-    lr: float = 5e-4
+    epochs: int = 100
+    batch_size: int = 128 * 2
+    lr: float = 1e-4
     weight_decay: float = 0.9
     loss_fn: str = Loss_fn.__name__
     optimizer: str = Optimizer.__name__
     eval_interval: int = 2
-    checkpoint_interval: int = 1
+    checkpoint_interval: int = 2
     shuffle: bool = True
     sample: bool = False
 
@@ -35,9 +35,9 @@ class DataConfig:
     raw: Path = Path('/home/fnoble/data/OpenAlex-parquet/')
     staged: Path = Path('/home/fnoble/data/staged/')
     train_start: int = datetime(2000, 1, 1).toordinal() # TODO change these to only datetime (strings for mlflow logging, convert to ordinal when needed)
-    train_end: int = datetime(2003, 1, 1).toordinal()
-    test_start: int = datetime(2003, 1, 1).toordinal()
-    test_end: int = datetime(2004, 1, 1).toordinal()
+    train_end: int = datetime(2007, 1, 1).toordinal()
+    test_start: int = datetime(2007, 1, 1).toordinal()
+    test_end: int = datetime(2010, 1, 1).toordinal()
 
 @dataclass(frozen=True)
 class LogConfig:
@@ -64,9 +64,9 @@ def init_lr_scheduler(
 
     warmup_scheduler = torch.optim.lr_scheduler.LinearLR(
         optimizer, 
-        start_factor=0.7, 
+        start_factor=0.01, 
         end_factor=1.0,
-        total_iters=3,
+        total_iters=10,
         last_epoch=-1 # Used to implement restart from checkpoint
     )
 
