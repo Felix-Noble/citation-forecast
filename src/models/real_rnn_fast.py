@@ -3,22 +3,19 @@ import torch
 import torch.nn as nn
 from torch import Tensor
 
-def recursive_mm_b(x):
-    n = x.shape[0]
-    if n >= 2:
-        return torch.bmm(
-            recursive_mm_b(x[:n // 2]),
-            recursive_mm_b(x[n // 2:]),
-                )
-    return x.squeeze(0)
+norm_func = nn.functional.rms_norm
+def bmm_activation(x1, x2):
+    return norm_func(torch.bmm(x1, x2), (*x1.shape[1:],))
 
-def recursive_mm(x):
+def recursive_mm_b(x, where_padding):
     n = x.shape[0]
     if n >= 2:
-        return torch.matmul(
-            recursive_mm(x[:n//2]),
-            recursive_mm(x[n//2:])
-        )
+        return bmm_activation(
+            recursive_mm_b(x[:n // 2], where_padding[: n // 2]),
+            recursive_mm_b(x[n // 2:], where_padding[: n // 2]),
+                )
+
+    x[where_padding] = 1
     return x.squeeze(0)
 
 class ConfigSchema(BaseModel):
@@ -68,9 +65,9 @@ class R_RNN_Fast(nn.Module):
         pass
 
     def forward(self, x: Tensor):
-        eos_one_hot = torch.zeros_like(x)
-        eos_t_index = torch.where(x == self.config.eos_token)[1]
-        eos_one_hot[x == self.config.eos_token] = 1
+        where_padding = torch.zeros_like(x, dtype=torch.bool)
+        where_padding[:torch.where(x == self.confi.eos_token)[1] + 1] = 1
+        where_padding = where_padding.permute(1, 0)
         embeddings = self.embed(x)
         B, T, C = embeddings.shape
         attention = torch.ones((B, self.config.attention_dim, 1), device=self.device, dtype=self.dtype)
@@ -79,7 +76,7 @@ class R_RNN_Fast(nn.Module):
             embed_projections = self.embed_proj(embeddings).unsqueeze(-1)
             embed_transforms = embed_projections @ embed_projections.transpose(-1, -2)
             embed_transforms = embed_transforms.permute(1, 0, 2, 3)
-            attention_mod = recursive_mm_b(embed_transforms)
+            attention_mod = recursive_mm_b(embed_transforms, where_padding)
             #attention_mod = parallel_matrix_product_iterative(embed_transforms).squeeze(0)
             attention = attention_mod @ attention
 
