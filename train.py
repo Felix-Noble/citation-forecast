@@ -365,6 +365,7 @@ def main(
 
     mlflow.set_experiment(EXPERIMENT_NAME)
     with mlflow.start_run(run_name=model.MODEL_NAME, nested=True):
+        mlf_run = mlflow.active_run()
         log_params(data_path, scheduler)
 
         for epoch in range(1, config.train.epochs + 1):
