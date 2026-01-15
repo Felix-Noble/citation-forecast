@@ -7,15 +7,13 @@ norm_func = nn.functional.rms_norm
 def bmm_activation(x1, x2):
     return norm_func(torch.bmm(x1, x2), (*x1.shape[1:],))
 
-def recursive_mm_b(x, where_padding):
+def recursive_mm_b(x):
     n = x.shape[0]
     if n >= 2:
         return bmm_activation(
-            recursive_mm_b(x[:n // 2], where_padding[: n // 2]),
-            recursive_mm_b(x[n // 2:], where_padding[: n // 2]),
+            recursive_mm_b(x[:n // 2]),
+            recursive_mm_b(x[n // 2:]),
                 )
-
-    x[where_padding] = 1
     return x.squeeze(0)
 
 class ConfigSchema(BaseModel):
@@ -66,8 +64,10 @@ class R_RNN_Fast(nn.Module):
 
     def forward(self, x: Tensor):
         where_padding = torch.zeros_like(x, dtype=torch.bool)
-        where_padding[:torch.where(x == self.confi.eos_token)[1] + 1] = 1
-        where_padding = where_padding.permute(1, 0)
+        padding_begin = torch.where(x == self.config.eos_token)[1] + 1
+        for batch_i, idx in enumerate(padding_begin):
+            where_padding[batch_i, idx:] = 1
+
         embeddings = self.embed(x)
         B, T, C = embeddings.shape
         attention = torch.ones((B, self.config.attention_dim, 1), device=self.device, dtype=self.dtype)
@@ -75,9 +75,10 @@ class R_RNN_Fast(nn.Module):
         for layer in range(self.config.n_layers):
             embed_projections = self.embed_proj(embeddings).unsqueeze(-1)
             embed_transforms = embed_projections @ embed_projections.transpose(-1, -2)
+            embed_transforms[where_padding, :, :] = 1
             embed_transforms = embed_transforms.permute(1, 0, 2, 3)
-            attention_mod = recursive_mm_b(embed_transforms, where_padding)
-            #attention_mod = parallel_matrix_product_iterative(embed_transforms).squeeze(0)
+                
+            attention_mod = recursive_mm_b(embed_transforms)
             attention = attention_mod @ attention
 
             attention_projection = self.attention_proj(attention.squeeze(-1)).unsqueeze(-1)
