@@ -79,7 +79,6 @@ class R_RNN_Fast(nn.Module):
         embeddings = self.embed(x)
         B, T, C = embeddings.shape
         attention = torch.ones((B, self.config.attention_dim, 1), device=self.device, dtype=self.dtype)
-
         for i, embed_proj in enumerate(self.embed_projections):
             embed_projections = embed_proj(embeddings).unsqueeze(-1)
             embed_transforms = embed_projections @ embed_projections.transpose(-1, -2)
@@ -87,7 +86,10 @@ class R_RNN_Fast(nn.Module):
             embed_transforms = embed_transforms.permute(1, 0, 2, 3)
                 
             attention_mod = recursive_mm_b(embed_transforms)
-            attention = attention_mod @ attention
+            next_attention = attention_mod @ attention
+            
+            if i > 0:
+                attention = next_attention + attention
 
             attention = nn.functional.rms_norm(attention, (attention.size(-1), ))
             attention_projection = self.attention_proj(attention.squeeze(-1)).unsqueeze(-1)
