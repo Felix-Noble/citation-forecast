@@ -18,6 +18,7 @@ def recursive_mm_b(x):
 
 class AttentionProjection(nn.Module):
     def __init__(self, model_config, device, dtype):
+        super().__init__()
         self.projection = nn.Sequential(
             nn.Linear(model_config.attention_dim, model_config.embed_dim, device=device, dtype=dtype),
             nn.GELU(),
