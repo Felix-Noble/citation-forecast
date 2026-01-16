@@ -10,4 +10,4 @@ class BinaryDataset(DF_Dataset):
 
     @override
     def _format_y(self, y: Tensor) -> Tensor:
-        return torch.round(y*2, decimals=0)
+        return torch.round(y, decimals=0)
