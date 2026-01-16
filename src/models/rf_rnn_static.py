@@ -87,17 +87,20 @@ class R_RNN_Fast(nn.Module):
             embed_transforms = embed_transforms.permute(1, 0, 2, 3)
                 
             attention_mod = recursive_mm_b(embed_transforms)
-            next_attention = attention_mod @ attention
-            
             if i > 0:
-                attention = next_attention + attention
-
+                attention = attention + (attention_mod @ attention)
+            else:
+                attention = attention_mod @ attention
+                
             attention = nn.functional.rms_norm(attention, (attention.size(-1), ))
+            attention = nn.functional.gelu(attention)
+
             attention_projection = self.attention_projections[i](attention.squeeze(-1)).unsqueeze(-1)
             attention_transformation = attention_projection @ attention_projection.transpose(-1, -2)
             if i < self.config.n_layers - 1:   
                 embeddings = attention_transformation.unsqueeze(1).expand(-1, T, -1, -1) @ embeddings.unsqueeze(-1)
                 embeddings = embeddings.squeeze(-1)
+                embeddings = nn.functional.gelu(embeddings)  
                 embeddings = nn.functional.rms_norm(embeddings, (embeddings.size(-1), ))  
 
         out = self.head(attention.squeeze(-1)) 
