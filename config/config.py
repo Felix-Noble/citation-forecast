@@ -11,7 +11,7 @@ class ModelConfig:
     eos_token: int = 200_002
     embed_dim: int = 512
     attention_dim: int = 512
-    n_layers: int = 12
+    n_layers: int = 10
     n_out: int = 5
 
 Loss_fn = torch.nn.CrossEntropyLoss
@@ -20,8 +20,9 @@ Optimizer = torch.optim.AdamW
 @dataclass(frozen=True)
 class TrainConfig:
     epochs: int = 100
-    batch_size: int = 1 
-    lr: float = 1e-4
+    batch_size: int = 6 
+    opttim_step_interval = 120 # n batches until optimizer steps
+    lr: float = 1e-5 
     weight_decay: float = 0.9
     loss_fn: str = Loss_fn.__name__
     optimizer: str = Optimizer.__name__

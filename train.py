@@ -387,8 +387,9 @@ def main(
                     loss = loss_fn(out.squeeze(-1), current_y)
                     forward_finished.record() # 'forward' finished later to allow to loss -> cpu copy
                     loss.backward()
-                    optimizer.step()
-                    optimizer.zero_grad() 
+                    if batch_i % config.train.opttim_step_interval == 0:
+                        optimizer.step()
+                        optimizer.zero_grad() 
 
                 with torch.cuda.stream(copy_stream):
                     next_X_gpu = next_X.to(device, non_blocking=True)
