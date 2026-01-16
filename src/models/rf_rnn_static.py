@@ -72,16 +72,17 @@ class R_RNN_Fast(nn.Module):
         pass
 
     def forward(self, x: Tensor):
-        where_padding = torch.zeros_like(x, dtype=torch.bool)
+        indicies = torch.arange(x.shape[1], device=self.device)
         padding_begin = torch.where(x == self.config.eos_token)[1] + 1
-        for batch_i, idx in enumerate(padding_begin):
-            where_padding[batch_i, idx:] = 1
+        where_padding = torch.zeros_like(x, dtype=torch.bool)
+        for i in range(x.shape[0]):
+            where_padding[i, :] = indicies > padding_begin[i]
 
         embeddings = self.embed(x)
         B, T, C = embeddings.shape
         attention = torch.ones((B, self.config.attention_dim, 1), device=self.device, dtype=self.dtype)
-        for i, embed_proj in enumerate(self.embed_projections):
-            embed_projections = embed_proj(embeddings).unsqueeze(-1)
+        for i in range(self.config.n_layers):
+            embed_projections = self.embed_projections[i](embeddings).unsqueeze(-1)
             embed_transforms = embed_projections @ embed_projections.transpose(-1, -2)
             embed_transforms[where_padding, :, :] = 1
             embed_transforms = embed_transforms.permute(1, 0, 2, 3)
