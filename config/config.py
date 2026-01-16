@@ -9,10 +9,10 @@ class ModelConfig:
     model_name:str = 'rf_rnn_static'
     vocab_size:int = 201_088
     eos_token: int = 200_002
-    embed_dim: int = 512
-    attention_dim: int = 512
-    n_layers: int = 10
-    n_out: int = 5
+    embed_dim: int = 128
+    attention_dim: int = 128
+    n_layers: int = 12
+    n_out: int = 2
 
 Loss_fn = torch.nn.CrossEntropyLoss
 Optimizer = torch.optim.AdamW
@@ -20,25 +20,27 @@ Optimizer = torch.optim.AdamW
 @dataclass(frozen=True)
 class TrainConfig:
     epochs: int = 100
-    batch_size: int = 6 
-    opttim_step_interval = 120 # n batches until optimizer steps
-    lr: float = 1e-5 
+    batch_size: int = 16
+    opttim_step_interval: int = 100 # n batches until optimizer steps
+    lr: float = 1e-4 
     weight_decay: float = 0.9
     loss_fn: str = Loss_fn.__name__
     optimizer: str = Optimizer.__name__
-    eval_interval: int = 2
-    checkpoint_interval: int = 2
+    eval_interval: int = 1
+    checkpoint_interval: int = 1
     shuffle: bool = True
     sample: bool = False
+    mat_mul_precision: str = 'medium'
 
 @dataclass(frozen=True)
 class DataConfig:
     raw: Path = Path('/home/fnoble/data/OpenAlex-parquet/')
     staged: Path = Path('/home/fnoble/data/staged/')
-    train_start: int = datetime(1990, 1, 1).toordinal() # TODO change these to only datetime (strings for mlflow logging, convert to ordinal when needed)
-    train_end: int = datetime(2010, 1, 1).toordinal()
-    test_start: int = datetime(2010, 1, 1).toordinal()
-    test_end: int = datetime(2012, 1, 1).toordinal()
+    max_len: int = 300
+    train_start: int = datetime(2000, 1, 1).toordinal() # TODO change these to only datetime (strings for mlflow logging, convert to ordinal when needed)
+    train_end: int = datetime(2003, 1, 1).toordinal()
+    test_start: int = datetime(2003, 1, 1).toordinal()
+    test_end: int = datetime(2004, 1, 1).toordinal()
 
 @dataclass(frozen=True)
 class LogConfig:

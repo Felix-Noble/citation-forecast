@@ -5,7 +5,7 @@ from config.config import config, Config, EXPERIMENT_NAME
 from src.types.valid_paths import VALID_PATHS
 from src.utils.logging import setup_logger
 from src.metric_trackers.classification_tracker import ClassificationTracker
-from src.datasets.quartile_dataset import QuartileDataset 
+from src.datasets.binary_dataset import BinaryDataset as _dataset
 from src.models.registry import get_model
 
 import torch
@@ -33,8 +33,7 @@ mlflow.end_run()
 #PYTORCH_TUNABLEOP_ENABLED=1
 #PYTORCH_TUNABLEOP_VERBOSE=1
 
-torch.backends.cuda.matmul.allow_tf32 = False 
-torch.set_float32_matmul_precision('medium')
+#torch.backends.cuda.matmul.allow_tf32 = False 
 
 logger = getLogger(Path(__file__).stem)
 _ = setup_logger(logger, config.logging)
@@ -293,6 +292,7 @@ def main(
     " Main Loop "
 
     from config.config import Loss_fn, Optimizer, init_lr_scheduler 
+    torch.set_float32_matmul_precision(config.train.mat_mul_precision)
     device: torch.device = torch.device('cuda') if torch.cuda.is_available() and gpu else torch.device('cpu')
 
     model = get_model(config.model)(config.model, device, torch.float32)
@@ -310,24 +310,24 @@ def main(
     scheduler = init_lr_scheduler(optimizer)
     _ = log_lrs(scheduler, 0)
 
-    train_dataset = QuartileDataset(
+    train_dataset = _dataset(
         data_path=str(config.data.staged / data_path),
         X='abstract_tokens',
         y='citation_normalized_percentile',
         t_start=config.data.train_start,
         t_end=config.data.train_end,
-        max_len=500,
+        max_len=config.data.max_len,
         pad=True,
         pad_value=0,
         testing=testing
     )
-    test_dataset = QuartileDataset(
+    test_dataset = _dataset(
         data_path=str(config.data.staged / data_path),
         X='abstract_tokens',
         y='citation_normalized_percentile',
         t_start=config.data.test_start,
         t_end=config.data.test_end,
-        max_len=500,
+        max_len=config.data.max_len,
         pad=True,
         pad_value=0,
         testing=testing
