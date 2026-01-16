@@ -9,9 +9,9 @@ class ModelConfig:
     model_name:str = 'rf_rnn_static'
     vocab_size:int = 201_088
     eos_token: int = 200_002
-    embed_dim: int = 64
-    attention_dim: int = 64
-    n_layers: int = 4
+    embed_dim: int = 512
+    attention_dim: int = 512
+    n_layers: int = 12
     n_out: int = 5
 
 Loss_fn = torch.nn.CrossEntropyLoss
@@ -20,8 +20,8 @@ Optimizer = torch.optim.AdamW
 @dataclass(frozen=True)
 class TrainConfig:
     epochs: int = 100
-    batch_size: int = 256
-    lr: float = 1e-3
+    batch_size: int = 1 
+    lr: float = 1e-4
     weight_decay: float = 0.9
     loss_fn: str = Loss_fn.__name__
     optimizer: str = Optimizer.__name__
@@ -34,10 +34,10 @@ class TrainConfig:
 class DataConfig:
     raw: Path = Path('/home/fnoble/data/OpenAlex-parquet/')
     staged: Path = Path('/home/fnoble/data/staged/')
-    train_start: int = datetime(2000, 1, 1).toordinal() # TODO change these to only datetime (strings for mlflow logging, convert to ordinal when needed)
-    train_end: int = datetime(2007, 1, 1).toordinal()
-    test_start: int = datetime(2007, 1, 1).toordinal()
-    test_end: int = datetime(2010, 1, 1).toordinal()
+    train_start: int = datetime(1990, 1, 1).toordinal() # TODO change these to only datetime (strings for mlflow logging, convert to ordinal when needed)
+    train_end: int = datetime(2010, 1, 1).toordinal()
+    test_start: int = datetime(2010, 1, 1).toordinal()
+    test_end: int = datetime(2012, 1, 1).toordinal()
 
 @dataclass(frozen=True)
 class LogConfig:
@@ -56,7 +56,7 @@ config = Config()
 def init_lr_scheduler(
     optimizer,
 ):
-    milestones = [10]
+    milestones = [15]
     sum = 0
     for x in milestones:
         sum += x
@@ -66,7 +66,7 @@ def init_lr_scheduler(
         optimizer, 
         start_factor=0.01, 
         end_factor=1.0,
-        total_iters=10,
+        total_iters=milestones[0],
         last_epoch=-1 # Used to implement restart from checkpoint
     )
 

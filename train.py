@@ -34,7 +34,7 @@ mlflow.end_run()
 #PYTORCH_TUNABLEOP_VERBOSE=1
 
 torch.backends.cuda.matmul.allow_tf32 = False 
-torch.set_float32_matmul_precision('high')
+torch.set_float32_matmul_precision('medium')
 
 logger = getLogger(Path(__file__).stem)
 _ = setup_logger(logger, config.logging)
@@ -294,9 +294,9 @@ def main(
 
     from config.config import Loss_fn, Optimizer, init_lr_scheduler 
     device: torch.device = torch.device('cuda') if torch.cuda.is_available() and gpu else torch.device('cpu')
-    logger.info(f'Running on {device}{" TESTING" if testing else ""}')
 
     model = get_model(config.model)(config.model, device, torch.float32)
+    logger.info(f'Running "{model.MODEL_NAME}" on {device}{" TESTING" if testing else ""}')
     if compile:
         model.compile(fullgraph=True, mode='default')
 
