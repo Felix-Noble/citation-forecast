@@ -425,7 +425,7 @@ def main(
                 mlflow.log_artifact(save_path)
                 # save model state and run id, load each on restart (pass as option)
             
-            _ = log_lrs(scheduler, epoch * examples_per_epoch)
+            _ = log_lrs(scheduler)
             scheduler.step() 
 
             if epoch % config.train.eval_interval == 0:
