@@ -16,11 +16,11 @@ def recursive_mm_b(x):
                 )
     return x.squeeze(0)
 
-class AttentionProjection(nn.Module):
-    def __init__(self, model_config, device, dtype):
+class Projection(nn.Module):
+    def __init__(self, in_dim, out_dim, device, dtype):
         super().__init__()
         self.projection = nn.Sequential(
-            nn.Linear(model_config.attention_dim, model_config.embed_dim, device=device, dtype=dtype),
+            nn.Linear(in_dim, out_dim, device=device, dtype=dtype),
             nn.GELU(),
         )
     def forward(self, x):
@@ -51,13 +51,12 @@ class R_RNN_Fast(nn.Module):
         self.embed = nn.Embedding(model_config.vocab_size, model_config.embed_dim, device=device, dtype=dtype)
 
         self.embed_projections = nn.ModuleList(
-            [AttentionProjection(model_config, device, dtype) for _ in range(model_config.n_layers)]
+            [Projection(model_config.embed_dim, model_config.attention_dim , device, dtype) for _ in range(model_config.n_layers)]
         ) 
 
-        self.attention_proj = nn.Sequential(
-            nn.Linear(model_config.embed_dim, model_config.attention_dim, device=device, dtype=dtype),
-            nn.GELU(),
-        )
+        self.attention_projections = nn.ModuleList(
+            [Projection(model_config.attention_dim, model_config.embed_dim , device, dtype) for _ in range(model_config.n_layers)]
+        ) 
 
         self.normaliser = nn.GELU()
 
@@ -94,7 +93,7 @@ class R_RNN_Fast(nn.Module):
                 attention = next_attention + attention
 
             attention = nn.functional.rms_norm(attention, (attention.size(-1), ))
-            attention_projection = self.attention_proj(attention.squeeze(-1)).unsqueeze(-1)
+            attention_projection = self.attention_projections[i](attention.squeeze(-1)).unsqueeze(-1)
             attention_transformation = attention_projection @ attention_projection.transpose(-1, -2)
             if i < self.config.n_layers - 1:   
                 embeddings = attention_transformation.unsqueeze(1).expand(-1, T, -1, -1) @ embeddings.unsqueeze(-1)
