@@ -20,8 +20,8 @@ Optimizer = torch.optim.AdamW
 @dataclass(frozen=True)
 class TrainConfig:
     epochs: int = 100
-    batch_size: int = 128
-    opttim_step_interval: int = 100 # n batches until optimizer steps
+    batch_size: int = 128 + 64
+    opttim_step_interval: int = 16 # n batches until optimizer steps
     lr: float = 1e-4 
     weight_decay: float = 0.9
     loss_fn: str = Loss_fn.__name__

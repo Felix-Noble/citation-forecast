@@ -10,4 +10,4 @@ class QuartileDataset(DF_Dataset):
 
     @override
     def _format_y(self, y: Tensor) -> Tensor:
-        return torch.round(y*4, decimals=0)
+        return torch.round(y*3, decimals=0)
