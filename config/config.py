@@ -10,7 +10,8 @@ class ModelConfig:
     vocab_size:int = 201_088
     eos_token: int = 200_002
     embed_dim: int = 128
-    attention_dim: int = 128
+    hidden_dim: int = 128
+    #attention_dim: int = 128
     n_layers: int = 4
     n_out: int = 3
 
@@ -21,7 +22,7 @@ Optimizer = torch.optim.AdamW
 class TrainConfig:
     epochs: int = 100
     batch_size: int = 256 - 32
-    opttim_step_interval: int = 15 # n batches until optimizer steps
+    opttim_step_interval: int = 5 # n batches until optimizer steps
     lr: float = 1e-3 
     weight_decay: float = 0.9
     loss_fn: str = Loss_fn.__name__
