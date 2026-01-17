@@ -123,7 +123,7 @@ class R_RNN_Fast(nn.Module):
             embed_transforms[where_padding, :, :] = 1
             embed_transforms = embed_transforms.permute(1, 0, 2, 3)
                 
-            attention_mod = recursive_mm(embed_transforms, where_padding)
+            attention_mod = recursive_mm(embed_transforms, where_padding.permute(1, 0))
             if i > 0:
                 attention = attention + torch.bmm(attention_mod, attention)
             else:
