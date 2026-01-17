@@ -155,11 +155,6 @@ class R_RNN_Fast(nn.Module):
         B, T, C = embeddings.shape
         attention = torch.ones((B, self.config.attention_dim, 1), device=self.device, dtype=self.dtype)
         for i in range(self.config.n_layers):
-            if torch.any(torch.isnan(attention)):
-                print(i, 'attention nan')
-            if torch.any(torch.isnan(embeddings)):
-                print(i, 'embeddings')
-
             embed_projections = self.embed_projections[i](embeddings).unsqueeze(-1)
             embed_transforms = embed_projections @ embed_projections.transpose(-1, -2)
             embed_transforms[where_padding, :, :] = 1
