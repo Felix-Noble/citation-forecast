@@ -232,7 +232,6 @@ def eval_model(
     example_progress,
     examples_done,
     metric_tracker: ClassificationTracker,
-    compute_stream: torch.cuda.Stream,
     copy_stream: torch.cuda.Stream,
     device: torch.device,
 ) -> None:
@@ -251,12 +250,11 @@ def eval_model(
             output_copy_finished.record()
 
         for next_batch_i, next_X, next_y in data_iterator:
-            with torch.cuda.stream(compute_stream):
-                output_copy_finished.wait()
-                batch_copy_finished.wait()
-                out = model(current_X)
-                loss = loss_fn(out.squeeze(-1), current_y)
-                forward_finished.record() # 'forward' finished later to allow to loss -> cpu copy
+            output_copy_finished.wait()
+            batch_copy_finished.wait()
+            out = model(current_X)
+            loss = loss_fn(out.squeeze(-1), current_y)
+            forward_finished.record() # 'forward' finished later to allow to loss -> cpu copy
 
             with torch.cuda.stream(copy_stream):
                 next_X_gpu = next_X.to(device, non_blocking=True)
@@ -355,7 +353,6 @@ def main(
         _, max_mem = torch.cuda.mem_get_info()
     mem_used = mem_util_progress.add_task('Mem Util', total=max_mem* (1/(1024**2)))
 
-    compute_stream = torch.cuda.Stream()
     copy_stream = torch.cuda.Stream()
     forward_finished = torch.cuda.Event()
     batch_copy_finished = torch.cuda.Event()
@@ -381,16 +378,15 @@ def main(
                 output_copy_finished.record()
 
             for next_batch_i, next_X, next_y in train_iterator:
-                with torch.cuda.stream(compute_stream):
-                    output_copy_finished.wait()
-                    batch_copy_finished.wait()
-                    out = model(current_X)
-                    loss = loss_fn(out.squeeze(-1), current_y)
-                    forward_finished.record() # 'forward' finished later to allow to loss -> cpu copy
-                    loss.backward()
-                    if batch_i % config.train.opttim_step_interval == 0 or batch_i == n_batches:
-                        optimizer.step()
-                        optimizer.zero_grad() 
+                output_copy_finished.wait()
+                batch_copy_finished.wait()
+                out = model(current_X)
+                loss = loss_fn(out.squeeze(-1), current_y)
+                forward_finished.record() # 'forward' finished later to allow to loss -> cpu copy
+                loss.backward()
+                if batch_i % config.train.opttim_step_interval == 0 or batch_i == n_batches:
+                    optimizer.step()
+                    optimizer.zero_grad() 
 
                 with torch.cuda.stream(copy_stream):
                     next_X_gpu = next_X.to(device, non_blocking=True)
@@ -440,7 +436,6 @@ def main(
                     example_progress=eval_example_progress,
                     examples_done=eval_examples_done,
                     metric_tracker=metric_tracker,
-                    compute_stream=compute_stream,
                     copy_stream=copy_stream,
                     device=device,
                         )
