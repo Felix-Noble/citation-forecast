@@ -3,6 +3,12 @@ import torch
 import torch.nn as nn
 from torch import Tensor
 
+def activation_func(x):
+    return nn.functional.rms_norm(
+        nn.functional.gelu(x),
+        (x.size(-1),)
+        )
+
 def recursive_mm(x, where_padding):
     n = x.shape[0]
     # case 1: single tensor
@@ -13,7 +19,7 @@ def recursive_mm(x, where_padding):
 
     # case 2: > 2 tensors    
     if n > 2:
-        return nn.functional.gelu(
+        return activation_func(
             torch.bmm(
                 recursive_mm(x[:n // 2], where_padding[:n // 2]),
                 recursive_mm(x[n // 2:], where_padding[n // 2:]),
@@ -30,7 +36,7 @@ def recursive_mm(x, where_padding):
         return torch.where(
                     where_both, ((x0 + x1) * 0.0) + torch.eye(x.shape[2], device=x.device), # replace with eye 
                         torch.where(
-                            where_1, x0, nn.functional.gelu(torch.bmm(x0, x1))
+                            where_1, x0, activation_func(torch.bmm(x0, x1))
                         )
                 )
 
@@ -149,6 +155,11 @@ class R_RNN_Fast(nn.Module):
         B, T, C = embeddings.shape
         attention = torch.ones((B, self.config.attention_dim, 1), device=self.device, dtype=self.dtype)
         for i in range(self.config.n_layers):
+            if torch.any(torch.isnan(attention)):
+                print(i, 'attention nan')
+            if torch.any(torch.isnan(embeddings)):
+                print(i, 'embeddings')
+
             embed_projections = self.embed_projections[i](embeddings).unsqueeze(-1)
             embed_transforms = embed_projections @ embed_projections.transpose(-1, -2)
             embed_transforms[where_padding, :, :] = 1
