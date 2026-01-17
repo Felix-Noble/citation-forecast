@@ -3,8 +3,39 @@ import torch
 import torch.nn as nn
 from torch import Tensor
 
-e = 1e-9
 def recursive_mm(x, where_padding):
+    n = x.shape[0]
+    # case 1: single tensor
+    if n < 2:
+        if torch.any(where_padding):
+            return ((x * 0.0) + torch.eye(x.shape[2], device=x.device)).squeeze(0) # replace with diagonal
+        return x.squeeze(0)
+
+    # case 2: > 2 tensors    
+    if n > 2:
+        return nn.functional.gelu(
+            torch.bmm(
+                recursive_mm(x[:n // 2], where_padding[:n // 2]),
+                recursive_mm(x[n // 2:], where_padding[n // 2:]),
+            )
+        )
+    # base case: n == 2
+    else:
+        x0 = x[0] 
+        x1 = x[1]
+        
+        where_both = where_padding[0].unsqueeze(-1).unsqueeze(-1).expand(-1, *x0.shape[1:])
+        where_1 = where_padding[1].unsqueeze(-1).unsqueeze(-1).expand(-1, *x1.shape[1:])
+
+        return torch.where(
+                    where_both, ((x0 + x1) * 0.0) + torch.eye(x.shape[2], device=x.device), # replace with eye 
+                        torch.where(
+                            where_1, x0, nn.functional.gelu(torch.bmm(x0, x1))
+                        )
+                )
+
+e = 1e-9
+def recursive_mm_old(x, where_padding):
     n = x.shape[0]
     # single matrix
     if n < 2:
@@ -17,10 +48,10 @@ def recursive_mm(x, where_padding):
     # multiple matrices
     elif n > 2:
         out = torch.bmm(
-            recursive_mm(x[:n // 2],
+            recursive_mm_old(x[:n // 2],
                          where_padding[:n // 2],
             ),
-            recursive_mm(x[n // 2:],
+            recursive_mm_old(x[n // 2:],
                          where_padding[n // 2:],
             )
         )
@@ -124,6 +155,7 @@ class R_RNN_Fast(nn.Module):
             embed_transforms = embed_transforms.permute(1, 0, 2, 3)
                 
             attention_mod = recursive_mm(embed_transforms, where_padding.permute(1, 0))
+
             if i > 0:
                 attention = attention + torch.bmm(attention_mod, attention)
             else:
@@ -142,3 +174,16 @@ class R_RNN_Fast(nn.Module):
 
         out = self.head(attention.squeeze(-1)) 
         return out
+
+if __name__ == '__main__':
+    x = torch.ones(5, 5, 2,2)
+    where_padding = torch.zeros((5,5), dtype=torch.bool)
+    where_padding[0,2:] = 1
+    x[where_padding] = 0
+    
+    out1 = recursive_mm_old(x, where_padding)
+    out2 = recursive_mm(x, where_padding)
+
+    print(out1)
+    print()
+    print(out2)
