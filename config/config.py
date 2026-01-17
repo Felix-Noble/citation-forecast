@@ -22,7 +22,7 @@ class TrainConfig:
     epochs: int = 100
     batch_size: int = 256
     opttim_step_interval: int = 10 # n batches until optimizer steps
-    lr: float = 1e-5 
+    lr: float = 1e-3 
     weight_decay: float = 0.9
     loss_fn: str = Loss_fn.__name__
     optimizer: str = Optimizer.__name__
