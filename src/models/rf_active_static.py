@@ -110,7 +110,7 @@ class ConfigSchema(BaseModel):
     n_out: PositiveInt
 
 class R_RNN_Fast(nn.Module):
-    MODEL_NAME = 'rf_rnn_static'
+    MODEL_NAME = 'rf_active_static'
     config_schema = ConfigSchema
     def __init__(self, 
                  model_config,

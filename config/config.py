@@ -6,7 +6,7 @@ EXPERIMENT_NAME = 'AF-Psych-M'
 
 @dataclass(frozen=True)
 class ModelConfig:
-    model_name:str = 'rf_rnn_static'
+    model_name:str = 'rf_active_static'
     vocab_size:int = 201_088
     eos_token: int = 200_002
     embed_dim: int = 128
@@ -20,8 +20,8 @@ Optimizer = torch.optim.AdamW
 @dataclass(frozen=True)
 class TrainConfig:
     epochs: int = 100
-    batch_size: int = 256
-    opttim_step_interval: int = 10 # n batches until optimizer steps
+    batch_size: int = 256 - 32
+    opttim_step_interval: int = 15 # n batches until optimizer steps
     lr: float = 1e-3 
     weight_decay: float = 0.9
     loss_fn: str = Loss_fn.__name__
