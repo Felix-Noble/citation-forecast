@@ -32,7 +32,7 @@ def recursive_mm(x, where_padding):
         x1 = x[1].squeeze(0)
         
         if torch.any(where_padding): 
-            out = torch.zeros(*x.shape[1:])
+            out = torch.zeros_like(x[1])
             for batch in range(x.shape[1]):
                 if where_padding[0, batch]: # both are padding 
                     out[batch] += x0[batch] * 0
