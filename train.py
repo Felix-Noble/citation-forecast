@@ -5,7 +5,7 @@ from config.config import config, Config, EXPERIMENT_NAME
 from src.types.valid_paths import VALID_PATHS
 from src.utils.logging import setup_logger
 from src.metric_trackers.classification_tracker import ClassificationTracker
-from src.datasets.binary_dataset import BinaryDataset as _dataset
+from src.datasets.tertiary_dataset import TertiaryDataset  as _dataset
 from src.models.registry import get_model
 
 import torch
@@ -13,6 +13,7 @@ import torch.nn as nn
 from torch import Tensor
 from torch.utils.data import Dataset, DataLoader
 from concurrent.futures import ThreadPoolExecutor
+import math
 import os
 from rich.progress import Progress, TextColumn, BarColumn, TimeElapsedColumn, TimeRemainingColumn
 from rich.traceback import install
@@ -22,7 +23,6 @@ from logging import getLogger
 import mlflow
 tracking_uri = "http://127.0.0.1:5000"
 mlflow.set_tracking_uri(tracking_uri)
-mlflow.end_run()
 
 # 3. Enable Math Attention (The failsafe - slowest but guaranteed to work)
 # env variables to spoof hipblaslt into working 
@@ -265,7 +265,7 @@ def eval_model(
                 forward_finished.wait()
                 loss_cpu = loss.detach().item()
                 if not torch.any(torch.isnan(next_X)):
-                    metric_tracker.log_metric('test_loss', loss_cpu, 1)
+                    metric_tracker.log_metric('test_loss', loss_cpu, current_X.shape[0])
                     metric_tracker.process_values((current_y, out.detach()), ('test_y', 'test_logits'))
                 output_copy_finished.record()
                 current_X = next_X_gpu.long()
@@ -314,8 +314,8 @@ def main(
         data_path=str(config.data.staged / data_path),
         X='abstract_tokens',
         y='citation_normalized_percentile',
-        t_start=config.data.train_start,
-        t_end=config.data.train_end,
+        t_start=config.data.train_start.toordinal(),
+        t_end=config.data.train_end.toordinal(),
         max_len=config.data.max_len,
         pad=True,
         pad_value=0,
@@ -325,8 +325,8 @@ def main(
         data_path=str(config.data.staged / data_path),
         X='abstract_tokens',
         y='citation_normalized_percentile',
-        t_start=config.data.test_start,
-        t_end=config.data.test_end,
+        t_start=config.data.test_start.toordinal(),
+        t_end=config.data.test_end.toordinal(),
         max_len=config.data.max_len,
         pad=True,
         pad_value=0,
@@ -334,6 +334,7 @@ def main(
     )
 
     examples_per_epoch = len(train_dataset) # update this for when sampling is introduced
+    n_batches = math.ceil(examples_per_epoch / config.train.batch_size)
     train_dataloader = init_dataloader(train_dataset)
     test_dataloader = init_dataloader(test_dataset)
 
@@ -387,7 +388,7 @@ def main(
                     loss = loss_fn(out.squeeze(-1), current_y)
                     forward_finished.record() # 'forward' finished later to allow to loss -> cpu copy
                     loss.backward()
-                    if batch_i % config.train.opttim_step_interval == 0:
+                    if batch_i % config.train.opttim_step_interval == 0 or batch_i == n_batches:
                         optimizer.step()
                         optimizer.zero_grad() 
 
@@ -397,11 +398,13 @@ def main(
                     next_y_gpu = next_y.to(device, non_blocking=True)
                     forward_finished.wait()
                     loss_cpu = loss.detach().item()
-                    if not torch.any(torch.isnan(next_X)):
-                        metric_tracker.log_metric('train_loss', loss_cpu, 1)
-                        metric_tracker.process_values((current_y, out.detach()), ('train_y', 'train_logits'))
-                        mlflow.log_metric('train_loss-batch', loss_cpu, step = (epoch-1) * examples_per_epoch + batch_i * config.train.batch_size)
-                        executor.submit(isnan_async, loss_cpu)
+                    #if not torch.any(torch.isnan(current_X)):
+
+                    metric_tracker.log_metric('train_loss', loss_cpu, current_X.shape[0])
+                    metric_tracker.process_values((current_y, out.detach()), ('train_y', 'train_logits'))
+                    mlflow.log_metric('train_loss-batch', loss_cpu, step = int((epoch-1) * examples_per_epoch + batch_i * config.train.batch_size))
+                    executor.submit(isnan_async, loss_cpu)
+
                     output_copy_finished.record()
                     current_X = next_X_gpu.long()
                     current_y = next_y_gpu.long()
@@ -426,7 +429,7 @@ def main(
                 mlflow.log_artifact(save_path)
                 # save model state and run id, load each on restart (pass as option)
             
-            _ = log_lrs(scheduler)
+            _ = log_lrs(scheduler, epoch)
             scheduler.step() 
 
             if epoch % config.train.eval_interval == 0:
