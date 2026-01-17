@@ -332,9 +332,9 @@ def main(
     )
 
     examples_per_epoch = len(train_dataset) # update this for when sampling is introduced
-    n_batches = math.ceil(examples_per_epoch / config.train.batch_size)
     train_dataloader = init_dataloader(train_dataset)
     test_dataloader = init_dataloader(test_dataset)
+    n_batches = len(train_dataloader) 
 
     metric_tracker = ClassificationTracker(
         init_mtrack_params(device=device),

@@ -27,7 +27,7 @@ class TrainConfig:
     loss_fn: str = Loss_fn.__name__
     optimizer: str = Optimizer.__name__
     eval_interval: int = 1
-    checkpoint_interval: int = 4
+    checkpoint_interval: int = 30
     shuffle: bool = True
     sample: bool = False
     mat_mul_precision: str = 'high'
