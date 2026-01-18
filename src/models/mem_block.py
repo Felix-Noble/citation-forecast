@@ -125,11 +125,11 @@ class R_RNN_Fast(nn.Module):
         self.embed = nn.Embedding(model_config.vocab_size, model_config.embed_dim, device=device, dtype=dtype)
 
         self.embed_projections = nn.ModuleList(
-            [Projection(model_config.embed_dim, model_config.hidden_dim , device, dtype) for _ in range(model_config.n_layers)]
+            [Projection(model_config.embed_dim, model_config.embed_dim , device, dtype) for _ in range(model_config.n_layers)]
         ) 
 
         self.mlps = nn.ModuleList(
-            [Projection(model_config.hidden_dim, model_config.embed_dim , device, dtype) for _ in range(model_config.n_layers)]
+            [Projection(model_config.embed_dim, model_config.embed_dim , device, dtype) for _ in range(model_config.n_layers)]
         ) 
 
         self.normaliser = nn.GELU()
@@ -153,7 +153,7 @@ class R_RNN_Fast(nn.Module):
                 
             embed_mod = recursive_mm(embed_transforms, where_padding.permute(1, 0))
 
-            hidden =  embeddings @ embed_mod.unsqueeze(1).extend(-1, T, -1, -1)
+            hidden =  embeddings @ embed_mod.unsqueeze(1).expand(-1, T, -1, -1)
             embeddings = embeddings + self.mlps[i](hidden)
 
             embeddings = nn.functional.gelu(embeddings)  
