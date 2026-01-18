@@ -102,7 +102,7 @@ class R_RNN_Fast(nn.Module):
                 
             embed_mod = recursive_mm(embed_transforms, where_padding.permute(1, 0))
             hidden =  embeddings.unsqueeze(-2) @ embed_mod.unsqueeze(1).expand(-1, T, -1, -1)
-            embeddings = embeddings + self.mlps[i](hidden)
+            embeddings = embeddings + self.mlps[i](hidden.squeeze(-2))
 
             embeddings = nn.functional.gelu(embeddings)  
             embeddings = nn.functional.rms_norm(embeddings, (embeddings.size(-1), ))  
