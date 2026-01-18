@@ -83,7 +83,7 @@ class R_RNN_Fast(nn.Module):
 
         self.normaliser = nn.GELU()
 
-        self.head = nn.Linear(model_config.attention_dim, model_config.n_out, device=device, dtype=dtype)
+        self.head = nn.Linear(model_config.embed_dim, model_config.n_out, device=device, dtype=dtype)
 
     def forward(self, x: Tensor):
         indicies = torch.arange(x.shape[1], device=self.device)
@@ -101,8 +101,7 @@ class R_RNN_Fast(nn.Module):
             embed_transforms = embed_transforms.permute(1, 0, 2, 3)
                 
             embed_mod = recursive_mm(embed_transforms, where_padding.permute(1, 0))
-
-            hidden =  embeddings @ embed_mod.unsqueeze(1).expand(-1, T, -1, -1)
+            hidden =  embeddings.unsqueeze(-2) @ embed_mod.unsqueeze(1).expand(-1, T, -1, -1)
             embeddings = embeddings + self.mlps[i](hidden)
 
             embeddings = nn.functional.gelu(embeddings)  
@@ -111,15 +110,3 @@ class R_RNN_Fast(nn.Module):
         out = torch.mean(self.head(embeddings), dim=1)
         return out
 
-if __name__ == '__main__':
-    x = torch.ones(5, 5, 2,2)
-    where_padding = torch.zeros((5,5), dtype=torch.bool)
-    where_padding[0,2:] = 1
-    x[where_padding] = 0
-    
-    out1 = recursive_mm_old(x, where_padding)
-    out2 = recursive_mm(x, where_padding)
-
-    print(out1)
-    print()
-    print(out2)
