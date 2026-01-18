@@ -6,7 +6,7 @@ EXPERIMENT_NAME = 'AF-Psych-M'
 
 @dataclass(frozen=True)
 class ModelConfig:
-    model_name:str = 'rf_active_static'
+    model_name:str = 'MMLP'
     vocab_size:int = 201_088
     eos_token: int = 200_002
     embed_dim: int = 128

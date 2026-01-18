@@ -40,56 +40,6 @@ def recursive_mm(x, where_padding):
                         )
                 )
 
-e = 1e-9
-def recursive_mm_old(x, where_padding):
-    n = x.shape[0]
-    # single matrix
-    if n < 2:
-        if torch.any(where_padding):
-            out = x * 0
-            out += e
-            out = (out / out).squeeze(0)
-        else:
-            out = x.squeeze(0)
-    # multiple matrices
-    elif n > 2:
-        out = torch.bmm(
-            recursive_mm_old(x[:n // 2],
-                         where_padding[:n // 2],
-            ),
-            recursive_mm_old(x[n // 2:],
-                         where_padding[n // 2:],
-            )
-        )
-        out = nn.functional.gelu(out)
-
-    # base case
-    else:
-        x0 = x[0].squeeze(0)
-        x1 = x[1].squeeze(0)
-        
-        if torch.any(where_padding): 
-            out = torch.zeros_like(x[1])
-            for batch in range(x.shape[1]):
-                if where_padding[0, batch]: # both are padding 
-                    out[batch] += x0[batch] * 0
-                    out[batch] += x1[batch] * 0 
-                    out[batch] += e
-                    out[batch] /= out[batch]
-                elif where_padding[1, batch]: # only x1 is padding
-                    out[batch] += x0[batch] * 1
-                    out[batch] += x1[batch] * 0
-                    # TODO: order by length so that I can bmm the ones not ending, then mat mul the rest
-                else:
-                    out[batch] += torch.matmul(x0[batch], x1[batch])
-                    out[batch] = nn.functional.gelu(out[batch])
-
-        else:
-            out = torch.bmm(x0, x1)     
-            out = nn.functional.gelu(out) 
-
-    return out
-
 class Projection(nn.Module):
     def __init__(self, in_dim, out_dim, device, dtype):
         super().__init__()
@@ -106,11 +56,10 @@ class ConfigSchema(BaseModel):
     eos_token: PositiveInt
     n_layers: PositiveInt
     embed_dim: PositiveInt
-    hidden_dim: PositiveInt
     n_out: PositiveInt
 
 class R_RNN_Fast(nn.Module):
-    MODEL_NAME = 'rf_active_static'
+    MODEL_NAME = 'mmlp'
     config_schema = ConfigSchema
     def __init__(self, 
                  model_config,
