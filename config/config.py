@@ -10,7 +10,6 @@ class ModelConfig:
     vocab_size:int = 201_088
     eos_token: int = 200_002
     embed_dim: int = 128
-    hidden_dim: int = 128
     #attention_dim: int = 128
     n_layers: int = 4
     n_out: int = 3
