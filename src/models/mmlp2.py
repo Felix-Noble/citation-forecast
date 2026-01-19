@@ -5,8 +5,8 @@ from torch import Tensor
 
 def activation_func(x):
     return nn.functional.rms_norm(
-        nn.functional.gelu(x),
-        (x.size(-1),)
+        x,
+        (x.size(-2), x.size(-1),)
         )
 
 def recursive_mm(x, where_padding):
@@ -61,7 +61,7 @@ class SelectiveAttention(nn.Module):
 
     def forward(self, embeddings, transform):
         Q = self.Q_projections(embeddings)
-        out = Q @ transform(-1, -2)
+        out = Q @ transform.transpose(-1, -2)
         return self.head(out)
 
 class ConfigSchema(BaseModel):
@@ -121,15 +121,16 @@ class R_RNN_Fast(nn.Module):
             Q = self.Q_projections[i](embeddings).unsqueeze(-1)
             K = self.K_projections[i](embeddings).unsqueeze(-1)
 
-            embed_matrices = Q @ K.transpose(-1, -2).permute(1, 0, 2, 3)
+            embed_matrices = (Q @ K.transpose(-1, -2)).permute(1, 0, 2, 3)
 
             embed_transform = recursive_mm(embed_matrices, where_padding.permute(1, 0))
             embed_transform = self.mlps1[i](embed_transform)
-            
+            embed_transform = self.mlps1[i](embed_transform.transpose(-1, -2))
+
             relevance = self.attention(embeddings, embed_transform)
             delta =  embeddings.unsqueeze(-2) @ embed_transform.unsqueeze(1).expand(-1, T, -1, -1)
 
-            embeddings = embeddings + (delta * relevance)
+            embeddings = embeddings + (delta.squeeze(-2) * relevance)
             embeddings = self.mlps2[i](embeddings)
             embeddings = nn.functional.rms_norm(embeddings, (embeddings.size(-1), ))  
 

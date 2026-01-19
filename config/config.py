@@ -6,12 +6,12 @@ EXPERIMENT_NAME = 'AF-Psych-M'
 
 @dataclass(frozen=True)
 class ModelConfig:
-    model_name:str = 'MMLP'
+    model_name:str = 'MMLP2'
     vocab_size:int = 201_088
     eos_token: int = 200_002
     embed_dim: int = 128
-    #attention_dim: int = 128
-    n_layers: int = 8
+    hidden_dim: int = int(128 * 2)
+    n_layers: int = 4
     n_out: int = 3
 
 Loss_fn = torch.nn.CrossEntropyLoss
@@ -22,7 +22,7 @@ class TrainConfig:
     epochs: int = 100
     batch_size: int = 96
     opttim_step_interval: int = 12 # n batches until optimizer steps
-    lr: float = 5e-4 
+    lr: float = 8e-4 
     weight_decay: float = 0.9
     loss_fn: str = Loss_fn.__name__
     optimizer: str = Optimizer.__name__
