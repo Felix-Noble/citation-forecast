@@ -57,11 +57,16 @@ class SelectiveAttention(nn.Module):
             nn.Linear(in_dim, in_dim, device=device, dtype=dtype),
             nn.GELU(),
         )
+        self.K_projections = nn.Sequential(
+            nn.Linear(in_dim, in_dim, device=device, dtype=dtype),
+            nn.GELU(),
+        )
         self.head = nn.Linear(in_dim, out_dim, device=device, dtype=dtype)
 
     def forward(self, embeddings, transform):
         Q = self.Q_projections(embeddings)
-        out = Q @ transform.transpose(-1, -2)
+        K = self.K_projections(transform)
+        out = Q @ K
         return self.head(out)
 
 class ConfigSchema(BaseModel):
@@ -73,7 +78,7 @@ class ConfigSchema(BaseModel):
     hidden_dim: PositiveInt
     n_out: PositiveInt
 
-class R_RNN_Fast(nn.Module):
+class MMLP2(nn.Module):
     MODEL_NAME = 'mmlp2'
     config_schema = ConfigSchema
     def __init__(self, 
@@ -100,11 +105,14 @@ class R_RNN_Fast(nn.Module):
             [Projection(model_config.hidden_dim, model_config.embed_dim , device, dtype) for _ in range(model_config.n_layers)]
         )
 
-        self.attention = SelectiveAttention(model_config.embed_dim, 1, device, dtype)
+        self.attention_selectors = nn.ModuleList(
+            [SelectiveAttention(model_config.embed_dim, 1, device, dtype) for _ in range(model_config.n_layers)]
+        )
 
         self.mlps2 = nn.ModuleList(
             [Projection(model_config.embed_dim, model_config.embed_dim , device, dtype) for _ in range(model_config.n_layers)]
         ) 
+        
         self.head = nn.Linear(model_config.embed_dim, model_config.n_out, device=device, dtype=dtype)
 
     def forward(self, x: Tensor):
@@ -127,10 +135,9 @@ class R_RNN_Fast(nn.Module):
             embed_transform = self.mlps1[i](embed_transform)
             embed_transform = self.mlps1[i](embed_transform.transpose(-1, -2))
 
-            relevance = self.attention(embeddings, embed_transform)
+            relevance = self.attention_selectors[i](embeddings, embed_transform)
             delta =  embeddings.unsqueeze(-2) @ embed_transform.unsqueeze(1).expand(-1, T, -1, -1)
-
-            embeddings = embeddings + (delta.squeeze(-2) * relevance)
+            embeddings = embeddings + (delta.squeeze(-2) * torch.softmax(relevance, dim=-1))
             embeddings = self.mlps2[i](embeddings)
             embeddings = nn.functional.rms_norm(embeddings, (embeddings.size(-1), ))  
 
