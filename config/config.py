@@ -20,14 +20,14 @@ Optimizer = torch.optim.AdamW
 @dataclass(frozen=True)
 class TrainConfig:
     epochs: int = 100
-    batch_size: int = 16
-    opttim_step_interval: int = 12 # n batches until optimizer steps
+    batch_size: int = 6 
+    opttim_step_interval: int = 100 # n batches until optimizer steps
     lr: float = 1e-6 
     weight_decay: float = 0.9
     loss_fn: str = Loss_fn.__name__
     optimizer: str = Optimizer.__name__
     eval_interval: int = 1
-    checkpoint_interval: int = 30
+    checkpoint_interval: int = 3
     shuffle: bool = True
     sample: bool = False
     mat_mul_precision: str = 'high'
@@ -38,9 +38,9 @@ class DataConfig:
     staged: Path = Path('/home/fnoble/data/staged/')
     max_len: int = 300
     train_start: datetime = datetime(2000, 1, 1)
-    train_end: datetime = datetime(2000, 6, 1)
-    test_start: datetime = datetime(2000, 6, 1)
-    test_end: datetime = datetime(2001, 1, 1)
+    train_end: datetime = datetime(2000, 3, 1)
+    test_start: datetime = datetime(2000, 3, 1)
+    test_end: datetime = datetime(2000, 6, 1)
 
 @dataclass(frozen=True)
 class LogConfig:
@@ -59,7 +59,7 @@ config = Config()
 def init_lr_scheduler(
     optimizer,
 ):
-    milestones = [15]
+    milestones = [15, 50]
     sum = 0
     for x in milestones:
         sum += x
@@ -75,14 +75,22 @@ def init_lr_scheduler(
 
     cosine_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
         optimizer,
-        T_max=config.train.epochs - milestones[0],
-        #eta_min=1e-10,
+        T_max=milestones[1] - milestones[0],
+        eta_min=1e-10,
         last_epoch=-1, # Used to implement restart from checkpoint
+    )
+
+    base_scheduler = torch.optim.lr_scheduler.LinearLR(
+        optimizer, 
+        start_factor=1, 
+        end_factor=1,
+        total_iters=config.train.epochs - milestones[1],
+        last_epoch=-1 # Used to implement restart from checkpoint
     )
 
     scheduler = torch.optim.lr_scheduler.SequentialLR(
         optimizer,
-        [warmup_scheduler, cosine_scheduler],
+        [warmup_scheduler, cosine_scheduler, base_scheduler],
         milestones,
         last_epoch=-1,
     )
