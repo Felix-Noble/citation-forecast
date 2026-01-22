@@ -141,5 +141,5 @@ class MMLP2(nn.Module):
             embeddings = self.mlps2[i](embeddings)
             embeddings = nn.functional.rms_norm(embeddings, (embeddings.size(-1), ))  
 
-        out = torch.mean(self.head(embeddings), dim=1)
-        return out
+        out = self.head(embeddings)
+        return out[:,0,:]
