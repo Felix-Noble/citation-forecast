@@ -92,6 +92,7 @@ class DF_Dataset(Dataset[tuple[Tensor, ...]]):
             x = x[:self.MAX_LEN]
        
         x = self._format_X(x)
+        
         if self.Y is not None:
             y = torch.tensor(self.df.loc[idx, self.Y], dtype=torch.float32)
             return x, self._format_y(y)
