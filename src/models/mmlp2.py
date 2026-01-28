@@ -1,4 +1,4 @@
-from pydantic import BaseModel, PositiveInt 
+from pydantic import BaseModel, PositiveInt, Int
 import torch
 import torch.nn as nn
 from torch import Tensor
@@ -72,7 +72,7 @@ class SelectiveAttention(nn.Module):
 class ConfigSchema(BaseModel):
     model_name: str
     vocab_size: PositiveInt 
-    pad_token: PositiveInt
+    pad_token: Int
     n_layers: PositiveInt
     embed_dim: PositiveInt
     hidden_dim: PositiveInt
