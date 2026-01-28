@@ -72,7 +72,7 @@ class SelectiveAttention(nn.Module):
 class ConfigSchema(BaseModel):
     model_name: str
     vocab_size: PositiveInt 
-    eos_token: PositiveInt
+    pad_token: PositiveInt
     n_layers: PositiveInt
     embed_dim: PositiveInt
     hidden_dim: PositiveInt
@@ -116,11 +116,7 @@ class MMLP2(nn.Module):
         self.head = nn.Linear(model_config.embed_dim, model_config.n_out, device=device, dtype=dtype)
 
     def forward(self, x: Tensor):
-        indicies = torch.arange(x.shape[1], device=self.device)
-        padding_begin = torch.where(x == self.config.eos_token)[1] + 1
-        where_padding = torch.zeros_like(x, dtype=torch.bool)
-        for i in range(x.shape[0]):
-            where_padding[i, :] = indicies > padding_begin[i]
+        padding_mask = torch.tensor((x.long() == self.config.pad_token), dtype=torch.bool)
 
         embeddings = self.embed(x)
         B, T, C = embeddings.shape
@@ -131,7 +127,7 @@ class MMLP2(nn.Module):
 
             embed_matrices = (Q @ K.transpose(-1, -2)).permute(1, 0, 2, 3)
 
-            embed_transform = recursive_mm(embed_matrices, where_padding.permute(1, 0))
+            embed_transform = recursive_mm(embed_matrices, padding_mask.permute(1, 0))
             embed_transform = self.mlps1[i](embed_transform)
             embed_transform = self.mlps1[i](embed_transform.transpose(-1, -2))
 

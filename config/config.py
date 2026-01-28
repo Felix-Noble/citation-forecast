@@ -8,10 +8,10 @@ EXPERIMENT_NAME = 'AF-Psych-M'
 class ModelConfig:
     model_name:str = 'MMLP2'
     vocab_size:int = 201_088
-    eos_token: int = 200_002
-    embed_dim: int = 256
-    hidden_dim: int = 512
-    n_layers: int = 12
+    pad_token: int = 0
+    embed_dim: int = 128
+    hidden_dim: int = 256
+    n_layers: int = 8
     n_out: int = 3
 
 Loss_fn = torch.nn.CrossEntropyLoss
@@ -19,15 +19,15 @@ Optimizer = torch.optim.AdamW
 
 @dataclass(frozen=True)
 class TrainConfig:
-    epochs: int = 100
-    batch_size: int = 6 
-    opttim_step_interval: int = 100 # n batches until optimizer steps
-    lr: float = 1e-6 
+    epochs: int = 150
+    batch_size: int = 32
+    opttim_step_interval: int = 6 # n batches until optimizer steps
+    lr: float = 1e-5 
     weight_decay: float = 0.9
     loss_fn: str = Loss_fn.__name__
     optimizer: str = Optimizer.__name__
     eval_interval: int = 1
-    checkpoint_interval: int = 3
+    checkpoint_interval: int = 10
     shuffle: bool = True
     sample: bool = False
     mat_mul_precision: str = 'high'
@@ -59,7 +59,8 @@ config = Config()
 def init_lr_scheduler(
     optimizer,
 ):
-    milestones = [15, 50]
+    milestones = [15, 60]
+    
     sum = 0
     for x in milestones:
         sum += x
@@ -80,21 +81,22 @@ def init_lr_scheduler(
         last_epoch=-1, # Used to implement restart from checkpoint
     )
 
-    base_scheduler = torch.optim.lr_scheduler.LinearLR(
+    final_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
         optimizer, 
-        start_factor=1, 
-        end_factor=1,
-        total_iters=config.train.epochs - milestones[1],
-        last_epoch=-1 # Used to implement restart from checkpoint
+        mode='min',
+        factor=0.1,
+        patience=0,
+
     )
 
-    scheduler = torch.optim.lr_scheduler.SequentialLR(
+    first_scheduler = torch.optim.lr_scheduler.SequentialLR(
         optimizer,
-        [warmup_scheduler, cosine_scheduler, base_scheduler],
-        milestones,
+        [warmup_scheduler, cosine_scheduler],
+        milestones[:-1],
         last_epoch=-1,
     )
-    return scheduler 
+
+    return (first_scheduler, final_scheduler), (milestones[-1], config.train.epochs)
 
 # Safety checks
 if config.train.sample and config.train.shuffle:
