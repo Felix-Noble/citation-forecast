@@ -116,7 +116,7 @@ class MMLP2(nn.Module):
         self.head = nn.Linear(model_config.embed_dim, model_config.n_out, device=device, dtype=dtype)
 
     def forward(self, x: Tensor):
-        padding_mask = (x.long() == self.config.pad_token).detach().bool()
+        padding_mask = (x.long() == self.config.pad_token).bool()
 
         embeddings = self.embed(x)
         B, T, C = embeddings.shape
