@@ -74,29 +74,27 @@ def init_lr_scheduler(
         last_epoch=-1 # Used to implement restart from checkpoint
     )
 
-    cosine_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+    cosine_oscilating_scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
         optimizer,
-        T_max=milestones[1] - milestones[0],
-        eta_min=1e-10,
+        T_0=10,
+        T_mult=1,
+        eta_min=1e-15,
         last_epoch=-1, # Used to implement restart from checkpoint
     )
 
-    final_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+    exponential_scheduler = torch.optim.lr_scheduler.ExponentialLR(
         optimizer, 
-        mode='min',
-        factor=0.1,
-        patience=0,
-
+        gamma=0.95,
     )
 
-    first_scheduler = torch.optim.lr_scheduler.SequentialLR(
+    scheduler = torch.optim.lr_scheduler.SequentialLR(
         optimizer,
-        [warmup_scheduler, cosine_scheduler],
-        milestones[:-1],
+        [warmup_scheduler, cosine_oscilating_scheduler, exponential_scheduler],
+        milestones,
         last_epoch=-1,
     )
 
-    return (first_scheduler, final_scheduler), (milestones[-1], config.train.epochs)
+    return scheduler
 
 # Safety checks
 if config.train.sample and config.train.shuffle:

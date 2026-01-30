@@ -305,9 +305,9 @@ def main(
         weight_decay = config.train.weight_decay,
     )
 
-    schedulers, scheduler_final_epochs = init_lr_scheduler(optimizer)
+    scheduler = init_lr_scheduler(optimizer)
     scheduler_i = 0
-    _ = log_lrs(schedulers[0], 0)
+    _ = log_lrs(scheduler, 0)
 
     train_dataset = _dataset(
         data_path=str(config.data.staged / data_path),
@@ -362,7 +362,7 @@ def main(
     mlflow.set_experiment(EXPERIMENT_NAME)
     with mlflow.start_run(run_name=model.MODEL_NAME, nested=True):
         mlf_run = mlflow.active_run()
-        log_params(data_path, schedulers[scheduler_i])
+        log_params(data_path, scheduler)
 
         for epoch in range(1, config.train.epochs + 1):
             model.train()
@@ -426,15 +426,8 @@ def main(
                 mlflow.log_artifact(save_path)
                 # save model state and run id, load each on restart (pass as option)
             
-            _ = log_lrs(schedulers[scheduler_i], epoch)
-
-            if isinstance(schedulers[scheduler_i], torch.optim.lr_scheduler.ReduceLROnPlateau):
-                schedulers[scheduler_i].step(loss)
-            else:
-                schedulers[scheduler_i].step() 
-
-            if schedulers[scheduler_i].last_epoch >= scheduler_final_epochs[scheduler_i]:
-                scheduler_i += 1
+            _ = log_lrs(scheduler, epoch)
+            scheduler.step() 
 
             if epoch % config.train.eval_interval == 0:
                 eval_model(
