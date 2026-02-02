@@ -11,7 +11,7 @@ class ModelConfig:
     pad_token: int = 0
     embed_dim: int = 128
     hidden_dim: int = 256
-    n_layers: int = 8
+    n_layers: int = 16
     n_out: int = 3
 
 Loss_fn = torch.nn.CrossEntropyLoss
@@ -20,9 +20,9 @@ Optimizer = torch.optim.AdamW
 @dataclass(frozen=True)
 class TrainConfig:
     epochs: int = 150
-    batch_size: int = 32
-    opttim_step_interval: int = 6 # n batches until optimizer steps
-    lr: float = 1e-5 
+    batch_size: int = 10
+    opttim_step_interval: int = 50 # n batches until optimizer steps
+    lr: float = 1e-7 
     weight_decay: float = 0.9
     loss_fn: str = Loss_fn.__name__
     optimizer: str = Optimizer.__name__
@@ -59,7 +59,7 @@ config = Config()
 def init_lr_scheduler(
     optimizer,
 ):
-    milestones = [15, 60]
+    milestones = [10, 40]
     
     sum = 0
     for x in milestones:
