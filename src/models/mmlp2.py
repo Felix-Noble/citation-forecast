@@ -101,10 +101,13 @@ class MMLP2(nn.Module):
             [Projection(model_config.embed_dim, model_config.hidden_dim , device, dtype) for _ in range(model_config.n_layers)]
         ) 
 
-        self.mlps1 = nn.ModuleList(
+        self.mlps11 = nn.ModuleList(
             [Projection(model_config.hidden_dim, model_config.embed_dim , device, dtype) for _ in range(model_config.n_layers)]
         )
 
+        self.mlps12 = nn.ModuleList(
+            [Projection(model_config.hidden_dim, model_config.embed_dim , device, dtype) for _ in range(model_config.n_layers)]
+        )
         self.attention_selectors = nn.ModuleList(
             [SelectiveAttention(model_config.embed_dim, 1, device, dtype) for _ in range(model_config.n_layers)]
         )
@@ -127,9 +130,9 @@ class MMLP2(nn.Module):
 
             embed_matrices = (Q @ K.transpose(-1, -2)).permute(1, 0, 2, 3)
 
-            embed_transform = recursive_mm(embed_matrices, padding_mask.permute(1, 0))
-            embed_transform = self.mlps1[i](embed_transform)
-            embed_transform = self.mlps1[i](embed_transform.transpose(-1, -2))
+            embed_transform = recursive_mm(embed_matrices, padding_mask.permute(1, 0)).contiguous()
+            embed_transform = self.mlps11[i](embed_transform)
+            embed_transform = self.mlps12[i](embed_transform.transpose(-1, -2))
 
             relevance = self.attention_selectors[i](embeddings, embed_transform)
             delta =  embeddings.unsqueeze(-2) @ embed_transform.unsqueeze(1).expand(-1, T, -1, -1)
