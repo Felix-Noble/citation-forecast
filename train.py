@@ -370,7 +370,6 @@ def main(
     mlflow.set_experiment(EXPERIMENT_NAME)
     with mlflow.start_run(run_name=model.MODEL_NAME, nested=True):
 
-        _ = log_lrs(scheduler, 0)
         mlf_run = mlflow.active_run()
         log_params(data_path, scheduler)
 
@@ -427,12 +426,6 @@ def main(
                 mem_use, _ = torch.cuda.mem_get_info()
                 mem_util_progress.update(mem_used, complete=mem_use * (1/(1024**2)))
 
-            _ = metric_tracker.calc_metrics(
-                logit_store_name='train_logits',
-                y_store_name='train_y',
-                prefix='train'
-            )
-
             if epoch % config.train.checkpoint_interval == 0:
                 save_dir = os.path.join(artifact_path, EXPERIMENT_NAME, str(mlf_run.info.run_id))
                 save_path = os.path.join(save_dir, f'epoch-{epoch}.pt')
@@ -457,6 +450,11 @@ def main(
                     device=device,
                         )
 
+            _ = metric_tracker.calc_metrics(
+                logit_store_name='train_logits',
+                y_store_name='train_y',
+                prefix='train'
+            )
             metrics = metric_tracker.report(
                 progress_bar=epoch_progress, 
                 epoch=epoch,
