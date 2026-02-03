@@ -314,7 +314,6 @@ def main(
 
     scheduler = init_lr_scheduler(optimizer)
     scheduler_i = 0
-    _ = log_lrs(scheduler, 0)
 
     train_dataset = _dataset(
         data_path=str(config.data.staged / data_path),
@@ -370,6 +369,8 @@ def main(
 
     mlflow.set_experiment(EXPERIMENT_NAME)
     with mlflow.start_run(run_name=model.MODEL_NAME, nested=True):
+
+        _ = log_lrs(scheduler, 0)
         mlf_run = mlflow.active_run()
         log_params(data_path, scheduler)
 
