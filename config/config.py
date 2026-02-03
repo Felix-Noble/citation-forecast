@@ -4,14 +4,24 @@ from dataclasses import dataclass
 from pathlib import Path
 EXPERIMENT_NAME = 'AF-Psych-M'
 
+top_k = (300 for _ in range(8))
+top_k = (*top_k, 150, 75, 25, 1)
+n_layers = len(top_k)
+selector_heads = tuple(8 for _ in range(n_layers))
+process_heads = tuple(8 for _ in range(n_layers))
+
 @dataclass(frozen=True)
 class ModelConfig:
-    model_name:str = 'MMLP2'
-    vocab_size:int = 201_088
+    model_name: str = 'h_attn'
+    vocab_size: int = 201_088
     pad_token: int = 0
+    outer_heads: int = 1
+    top_k: tuple[int, ...] = top_k
+    selector_heads: tuple[int, ...] = selector_heads
+    process_heads: tuple[int, ...] = process_heads
+    n_layers: int = n_layers
     embed_dim: int = 128
     hidden_dim: int = 256
-    n_layers: int = 16
     n_out: int = 3
 
 Loss_fn = torch.nn.CrossEntropyLoss
@@ -20,8 +30,8 @@ Optimizer = torch.optim.AdamW
 @dataclass(frozen=True)
 class TrainConfig:
     epochs: int = 150
-    batch_size: int = 10
-    opttim_step_interval: int = 50 # n batches until optimizer steps
+    batch_size: int = 32
+    opttim_step_interval: int = 10 # n batches until optimizer steps
     lr: float = 1e-7 
     weight_decay: float = 0.9
     loss_fn: str = Loss_fn.__name__
@@ -55,7 +65,6 @@ class Config:
     logging: LogConfig = LogConfig()
 
 config = Config()
-
 def init_lr_scheduler(
     optimizer,
 ):
