@@ -99,7 +99,7 @@ class DF_Dataset(Dataset[tuple[Tensor, ...]]):
             y = torch.tensor(self.df.loc[idx, self.Y], dtype=torch.float32)
 
         if self.RETURN_MASK:
-            mask = (x == self.PAD_VALUE).bool().unsqueeze(-1).expand(-1, self.MAX_LEN)
+            mask = (x != self.PAD_VALUE).bool().unsqueeze(0).expand(self.MAX_LEN, -1)
             return x, y, mask
         else:
             return x, y

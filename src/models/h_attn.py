@@ -109,10 +109,12 @@ class HAttnBlock(nn.Module):
         ) 
     def forward(self, x:Tensor, mask: Tensor) -> tuple[Tensor, Tensor]:
         OB, B, T, C = x.shape
+        x = nn.functional.rms_norm(x, (x.size(-1), ))
         out = torch.empty(OB, B, self.config.k, C, device=self.device, dtype=self.dtype)
         mask_out = torch.empty(OB, B, self.config.k, self.config.k, device=self.device, dtype=torch.bool)
         for i in range(self.config.outer_heads):
             scores = self.selective_attn[i](x[i], mask[i])  
+            scores = scores * mask[i, :, 0, :].unsqueeze(-1)
             _,  inds = torch.topk(scores.squeeze(-1), self.config.k, dim=-1)
             inds, _ = torch.sort(inds.long(), dim=1)
             ordered_scores = torch.gather(
@@ -187,7 +189,6 @@ class H_ATTN(nn.Module):
         return torch.mean(out, dim=0)    
 
 if __name__ == '__main__':
-    
     test_val = 2 
     
     if test_val == 1:
@@ -204,8 +205,10 @@ if __name__ == '__main__':
         test_gather = torch.gather(test_mask, dim=1, index=test_inds.unsqueeze(-1).expand(-1, -1, 3))
         print(test_gather)
     
-    if test_val == 2:
+    if test_val == 3:
         config = ModelConfig(
+                model_name = 'test',
+                pad_token = 0,
                 outer_heads = 2,
                 top_k = [4,1],
                 selector_heads = [3,3],
