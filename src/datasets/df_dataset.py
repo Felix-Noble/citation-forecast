@@ -29,6 +29,7 @@ class DF_Dataset(Dataset[tuple[Tensor, ...]]):
                  pad_value: int = 0,
                  pad: bool = True,
                  truncate: bool | str = 'drop',
+                 return_mask: bool = False,
                  testing: bool = False,
                  ):
         super().__init__()
@@ -70,6 +71,7 @@ class DF_Dataset(Dataset[tuple[Tensor, ...]]):
         self.Y: str | None = y
 
         self.PAD: bool = pad
+        self.RETURN_MASK: bool = return_mask
         self.TRUNCATE: bool | str = truncate
         self.MAX_LEN: int = max_len
         self.PAD_VALUE: int = pad_value
@@ -92,9 +94,12 @@ class DF_Dataset(Dataset[tuple[Tensor, ...]]):
             x = x[:self.MAX_LEN]
        
         x = self._format_X(x)
-        
+        y = torch.tensor(float('nan'), dtype=torch.float32) 
         if self.Y is not None:
             y = torch.tensor(self.df.loc[idx, self.Y], dtype=torch.float32)
-            return x, self._format_y(y)
 
-        return x, torch.tensor(float('nan'), dtype=torch.float32)
+        if self.RETURN_MASK:
+            mask = (x == self.PAD_VALUE).bool().unsqueeze(-1).expand(-1, self.MAX_LEN)
+            return x, y, mask
+        else:
+            return x, y

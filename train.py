@@ -220,10 +220,11 @@ def init_mtrack_params(
 
 def plusN_iterator(iterator: Iterator[tuple[torch.Tensor, ...]], extra_iters: int) -> Iterator[tuple[torch.Tensor, ...]]:
     for i, entry in enumerate(iterator):
-        yield i, *entry
+        yield torch.tensor(i), *entry
 
+    extra_entry = tuple(torch.tensor(float('nan')) for _ in range(len(tuple(entry)) + 1))
     for _ in range(extra_iters):
-        yield torch.nan, torch.tensor(float('nan')), torch.tensor(float('nan'))
+        yield extra_entry
 
 def eval_model(
     model: nn.Module,
@@ -243,30 +244,34 @@ def eval_model(
     with torch.no_grad():
         data_iterator = plusN_iterator(iter(dataloader), extra_iters=1)
         with torch.cuda.stream(copy_stream):
-            batch_i, current_X, current_y = next(data_iterator)
+            batch_i, current_X, current_y, current_mask = next(data_iterator)
             current_X = current_X.to(device, non_blocking=True).long()
             current_y = current_y.to(device, non_blocking=True).long()
+            current_mask = current_mask.to(device, non_blocking=True)
             batch_copy_finished.record()
             output_copy_finished.record()
 
-        for next_batch_i, next_X, next_y in data_iterator:
+        for next_batch_i, next_X, next_y, next_mask in data_iterator:
+            if torch.any(torch.isnan(current_X)):
+                break
             output_copy_finished.wait()
             batch_copy_finished.wait()
-            out = model(current_X)
+            out = model(current_X, current_mask)
             loss = loss_fn(out.squeeze(-1), current_y)
             forward_finished.record() # 'forward' finished later to allow to loss -> cpu copy
 
             with torch.cuda.stream(copy_stream):
                 next_X_gpu = next_X.to(device, non_blocking=True)
+                next_mask_gpu = next_mask.to(device, non_blocking=True)
                 batch_copy_finished.record()
                 next_y_gpu = next_y.to(device, non_blocking=True)
                 forward_finished.wait()
                 loss_cpu = loss.detach().item()
-                if not torch.any(torch.isnan(next_X)):
-                    metric_tracker.log_metric('test_loss', loss_cpu, current_X.shape[0])
-                    metric_tracker.process_values((current_y, out.detach()), ('test_y', 'test_logits'))
+                metric_tracker.log_metric('test_loss', loss_cpu, current_X.shape[0])
+                metric_tracker.process_values((current_y, out.detach()), ('test_y', 'test_logits'))
                 output_copy_finished.record()
                 current_X = next_X_gpu.long()
+                current_mask = next_mask_gpu
                 current_y = next_y_gpu.long()
 
             example_progress.update(examples_done, advance=config.train.batch_size)
@@ -317,6 +322,7 @@ def main(
         t_end=config.data.train_end.toordinal(),
         max_len=config.data.max_len,
         pad=True,
+        return_mask=True,
         pad_value=config.model.pad_token,
         testing=testing
     )
@@ -328,6 +334,7 @@ def main(
         t_end=config.data.test_end.toordinal(),
         max_len=config.data.max_len,
         pad=True,
+        return_mask=True,
         pad_value=config.model.pad_token,
         testing=testing
     )
@@ -372,16 +379,19 @@ def main(
 
             train_iterator = plusN_iterator(iter(train_dataloader), extra_iters=1)
             with torch.cuda.stream(copy_stream):
-                batch_i, current_X, current_y = next(train_iterator)
+                batch_i, current_X, current_y, current_mask = next(train_iterator)
                 current_X = current_X.to(device, non_blocking=True).long()
+                current_mask = current_mask.to(device, non_blocking=True)
                 current_y = current_y.to(device, non_blocking=True).long()
                 batch_copy_finished.record()
                 output_copy_finished.record()
 
-            for next_batch_i, next_X, next_y in train_iterator:
+            for next_batch_i, next_X, next_y, next_mask in train_iterator:
+                if torch.any(torch.isnan(current_X)):
+                    break
                 output_copy_finished.wait()
                 batch_copy_finished.wait()
-                out = model(current_X)
+                out = model(current_X, current_mask)
                 loss = loss_fn(out.squeeze(-1), current_y)
                 forward_finished.record() # 'forward' finished later to allow to loss -> cpu copy
                 loss.backward()
@@ -391,11 +401,11 @@ def main(
 
                 with torch.cuda.stream(copy_stream):
                     next_X_gpu = next_X.to(device, non_blocking=True)
+                    next_mask_gpu = next_mask.to(device, non_blocking=True)
                     batch_copy_finished.record()
                     next_y_gpu = next_y.to(device, non_blocking=True)
                     forward_finished.wait()
                     loss_cpu = loss.detach().item()
-                    #if not torch.any(torch.isnan(current_X)):
 
                     metric_tracker.log_metric('train_loss', loss_cpu, current_X.shape[0])
                     metric_tracker.process_values((current_y, out.detach()), ('train_y', 'train_logits'))
@@ -404,6 +414,7 @@ def main(
 
                     output_copy_finished.record()
                     current_X = next_X_gpu.long()
+                    current_mask = next_mask_gpu
                     current_y = next_y_gpu.long()
                     batch_i = next_batch_i
 
