@@ -97,6 +97,7 @@ class DF_Dataset(Dataset[tuple[Tensor, ...]]):
         y = torch.tensor(float('nan'), dtype=torch.float32) 
         if self.Y is not None:
             y = torch.tensor(self.df.loc[idx, self.Y], dtype=torch.float32)
+            y = self._format_y(y)
 
         if self.RETURN_MASK:
             mask = (x != self.PAD_VALUE).bool().unsqueeze(0).expand(self.MAX_LEN, -1)
