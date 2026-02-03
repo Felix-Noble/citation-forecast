@@ -20,8 +20,8 @@ class ModelConfig:
     selector_heads: tuple[int, ...] = selector_heads
     process_heads: tuple[int, ...] = process_heads
     n_layers: int = n_layers
-    embed_dim: int = 128
-    hidden_dim: int = 256
+    embed_dim: int = 256
+    hidden_dim: int = 512
     n_out: int = 3
 
 Loss_fn = torch.nn.CrossEntropyLoss
@@ -32,7 +32,7 @@ class TrainConfig:
     epochs: int = 150
     batch_size: int = 32
     opttim_step_interval: int = 10 # n batches until optimizer steps
-    lr: float = 1e-7 
+    lr: float = 1e-4 
     weight_decay: float = 0.9
     loss_fn: str = Loss_fn.__name__
     optimizer: str = Optimizer.__name__
