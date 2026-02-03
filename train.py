@@ -13,7 +13,7 @@ import torch.nn as nn
 from torch import Tensor
 from torch.utils.data import Dataset, DataLoader
 from concurrent.futures import ThreadPoolExecutor
-import math
+import time
 import os
 from rich.progress import Progress, TextColumn, BarColumn, TimeElapsedColumn, TimeRemainingColumn
 from rich.traceback import install
@@ -48,8 +48,10 @@ install(
     word_wrap=False
 )
 
-def isnan_async(loss: torch.float32):
+def isnan_async(loss):
     if torch.any(torch.isnan(loss)):
+        logger.error('Loss is NaN, interrupting training')
+        time.sleep(5)
         raise ValueError('Loss is NaN, interrupting training')
 
 def init_dataloader(
@@ -252,8 +254,6 @@ def eval_model(
             output_copy_finished.record()
 
         for next_batch_i, next_X, next_y, next_mask in data_iterator:
-            if torch.any(torch.isnan(current_X)):
-                break
             output_copy_finished.wait()
             batch_copy_finished.wait()
             out = model(current_X, current_mask)
@@ -261,8 +261,9 @@ def eval_model(
             forward_finished.record() # 'forward' finished later to allow to loss -> cpu copy
 
             with torch.cuda.stream(copy_stream):
-                next_X_gpu = next_X.to(device, non_blocking=True)
-                next_mask_gpu = next_mask.to(device, non_blocking=True)
+                if not torch.any(torch.isnan(next_X)):
+                    next_X_gpu = next_X.to(device, non_blocking=True)
+                    next_mask_gpu = next_mask.to(device, non_blocking=True)
                 batch_copy_finished.record()
                 next_y_gpu = next_y.to(device, non_blocking=True)
                 forward_finished.wait()
@@ -270,9 +271,10 @@ def eval_model(
                 metric_tracker.log_metric('test_loss', loss_cpu, current_X.shape[0])
                 metric_tracker.process_values((current_y, out.detach()), ('test_y', 'test_logits'))
                 output_copy_finished.record()
-                current_X = next_X_gpu.long()
-                current_mask = next_mask_gpu
-                current_y = next_y_gpu.long()
+                if not torch.any(torch.isnan(next_X)):
+                    current_X = next_X_gpu.long()
+                    current_mask = next_mask_gpu
+                    current_y = next_y_gpu.long()
 
             example_progress.update(examples_done, advance=config.train.batch_size)
 
@@ -387,8 +389,7 @@ def main(
                 output_copy_finished.record()
 
             for next_batch_i, next_X, next_y, next_mask in train_iterator:
-                if torch.any(torch.isnan(current_X)):
-                    break
+
                 output_copy_finished.wait()
                 batch_copy_finished.wait()
                 out = model(current_X, current_mask)
@@ -400,8 +401,9 @@ def main(
                     optimizer.zero_grad() 
 
                 with torch.cuda.stream(copy_stream):
-                    next_X_gpu = next_X.to(device, non_blocking=True)
-                    next_mask_gpu = next_mask.to(device, non_blocking=True)
+                    if not torch.any(torch.isnan(next_X)):
+                        next_X_gpu = next_X.to(device, non_blocking=True)
+                        next_mask_gpu = next_mask.to(device, non_blocking=True)
                     batch_copy_finished.record()
                     next_y_gpu = next_y.to(device, non_blocking=True)
                     forward_finished.wait()
@@ -413,10 +415,12 @@ def main(
                     executor.submit(isnan_async, loss_cpu)
 
                     output_copy_finished.record()
-                    current_X = next_X_gpu.long()
-                    current_mask = next_mask_gpu
-                    current_y = next_y_gpu.long()
-                    batch_i = next_batch_i
+
+                    if not torch.any(torch.isnan(next_X)):
+                        current_X = next_X_gpu.long()
+                        current_mask = next_mask_gpu
+                        current_y = next_y_gpu.long()
+                        batch_i = next_batch_i
 
                 example_progress.update(examples_done, advance=config.train.batch_size)
                 mem_use, _ = torch.cuda.mem_get_info()
