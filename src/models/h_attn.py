@@ -1,4 +1,4 @@
-from pydantic import BaseModel, PositiveInt
+from pydantic import BaseModel, PositiveInt, PositiveFloat
 import torch
 from torch import Tensor
 import torch.nn as nn
@@ -15,6 +15,7 @@ class ModelConfig(BaseModel):
     embed_dim: PositiveInt
     hidden_dim: PositiveInt
     n_out: PositiveInt
+    dropout: PositiveFloat
 
 class LayerConfig(BaseModel):
     outer_heads: PositiveInt
@@ -23,6 +24,7 @@ class LayerConfig(BaseModel):
     process_heads: PositiveInt
     embed_dim: PositiveInt
     hidden_dim: PositiveInt
+    dropout: PositiveFloat
 
 class MultiHeadSelfAttn(nn.Module):
     def __init__(
@@ -31,11 +33,13 @@ class MultiHeadSelfAttn(nn.Module):
         hidden_dim: int,
         dim_out: int,
         n_heads: int,
+        dropout: float,
         device: torch.device,
         dtype: torch.dtype,
     ):
         super().__init__()
         self.n_heads = n_heads
+        self.dropout = dropout
         self.QKV_proj = nn.Linear(dim_in, hidden_dim * n_heads * 3, device=device, dtype=dtype)
         self.head = nn.Linear(hidden_dim * n_heads, dim_out, device=device, dtype=dtype)
 
@@ -47,7 +51,7 @@ class MultiHeadSelfAttn(nn.Module):
         K = K.reshape(B, T, -1, self.n_heads).permute(0, 3, 1, 2)
         V = V.reshape(B, T, -1, self.n_heads).permute(0, 3, 1, 2)
         
-        out = nn.functional.scaled_dot_product_attention(Q, K, V, mask.unsqueeze(1).expand(-1, self.n_heads, -1, -1))
+        out = nn.functional.scaled_dot_product_attention(Q, K, V, mask.unsqueeze(1).expand(-1, self.n_heads, -1, -1), dropout_p=self.dropout)
         
         out = out.transpose(1, 2).contiguous().flatten(-2)
         out = self.head(out)
@@ -64,6 +68,7 @@ class MLP(nn.Module):
         self.mlp = nn.Sequential(
             nn.Linear(config.hidden_dim, config.embed_dim, device=device, dtype=dtype),
             nn.GELU(),
+            nn.Dropout(p=config.dropout)
         )
 
     def forward(self, x: Tensor) -> Tensor:
@@ -76,7 +81,7 @@ class SelectiveAttn(nn.Module):
                  dtype: torch.dtype,
                  ):
         super().__init__()
-        self.relevance_selector = MultiHeadSelfAttn(config.embed_dim, config.hidden_dim, config.hidden_dim, config.selector_heads, device=device, dtype=dtype)
+        self.relevance_selector = MultiHeadSelfAttn(config.embed_dim, config.hidden_dim, config.hidden_dim, config.selector_heads, config.dropout, device=device, dtype=dtype)
         self.head = nn.Sequential(
             nn.Linear(config.hidden_dim, 1, device=device, dtype=dtype),
             nn.GELU(),
@@ -102,7 +107,7 @@ class HAttnBlock(nn.Module):
                 [ SelectiveAttn(config, device, dtype) for _ in range(config.outer_heads) ]
         )
         self.process_attn = nn.ModuleList(
-                [ MultiHeadSelfAttn(config.embed_dim, config.hidden_dim, config.hidden_dim, config.process_heads, device, dtype) for _ in range(config.outer_heads) ]
+                [ MultiHeadSelfAttn(config.embed_dim, config.hidden_dim, config.hidden_dim, config.process_heads, config.dropout, device, dtype) for _ in range(config.outer_heads) ]
         )
         self.mlp = nn.ModuleList(
                 [ MLP(config, device, dtype) for _ in range(config.outer_heads) ]
@@ -110,8 +115,8 @@ class HAttnBlock(nn.Module):
     def forward(self, x:Tensor, mask: Tensor) -> tuple[Tensor, Tensor]:
         OB, B, T, C = x.shape
         x = nn.functional.rms_norm(x, (x.size(-1), ))
-        out = torch.empty(OB, B, self.config.k, C, device=self.device, dtype=self.dtype)
-        mask_out = torch.empty(OB, B, self.config.k, self.config.k, device=self.device, dtype=torch.bool)
+        out = torch.zeros(OB, B, self.config.k, C, device=self.device, dtype=self.dtype)
+        mask_out = torch.zeros(OB, B, self.config.k, self.config.k, device=self.device, dtype=torch.bool)
         for i in range(self.config.outer_heads):
             scores = self.selective_attn[i](x[i], mask[i])  
             scores = scores * mask[i, :, 0, :].unsqueeze(-1)
@@ -134,9 +139,9 @@ class HAttnBlock(nn.Module):
                 index=inds.unsqueeze(-1).expand(-1, -1, self.config.k)
             )
 
-            mask_out[i] = selected_mask.clone()
+            mask_out[i] = mask_out[i] + selected_mask.clone()
             
-            out[i] = selected_tokens + self.mlp[i](
+            out[i] = out[i] + selected_tokens + self.mlp[i](
                 self.process_attn[i](selected_tokens * ordered_scores, selected_mask)
             )
         return out.contiguous(), mask_out.contiguous()
@@ -167,12 +172,13 @@ class H_ATTN(nn.Module):
                 process_heads=config.process_heads[i],
                 embed_dim=config.embed_dim,
                 hidden_dim=config.hidden_dim,
+                dropout=config.dropout,
             )
             layers.append(HAttnBlock(layer_config, device, dtype))
 
         self.layers = nn.ModuleList(layers)
 
-        self.head = nn.Linear(config.embed_dim, config.n_out, device=device, dtype=dtype)
+        self.head = nn.Linear(config.embed_dim * config.top_k[-1], config.n_out, device=device, dtype=dtype)
 
     def forward(self, x: Tensor, mask: Tensor) -> Tensor:
         
@@ -185,7 +191,8 @@ class H_ATTN(nn.Module):
         for layer in self.layers:
             out, mask = layer(out, mask)
 
-        out = self.head(out).squeeze(-2, -1)
+        out = out.flatten(-2, -1)
+        out = self.head(out)
         return torch.mean(out, dim=0)    
 
 if __name__ == '__main__':
