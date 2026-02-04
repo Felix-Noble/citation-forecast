@@ -4,8 +4,8 @@ from dataclasses import dataclass
 from pathlib import Path
 EXPERIMENT_NAME = 'AF-Psych-M'
 
-top_k = (300 for _ in range(8))
-top_k = (*top_k, 150, 75, 25, 1)
+top_k = (500 for _ in range(8))
+top_k = (*top_k, 256, 128, 64, 32, 16, 8)
 n_layers = len(top_k)
 selector_heads = tuple(8 for _ in range(n_layers))
 process_heads = tuple(8 for _ in range(n_layers))
@@ -15,7 +15,7 @@ class ModelConfig:
     model_name: str = 'h_attn'
     vocab_size: int = 201_088
     pad_token: int = 0
-    outer_heads: int = 1
+    outer_heads: int = 2
     top_k: tuple[int, ...] = top_k
     selector_heads: tuple[int, ...] = selector_heads
     process_heads: tuple[int, ...] = process_heads
@@ -23,13 +23,14 @@ class ModelConfig:
     embed_dim: int = 256
     hidden_dim: int = 512
     n_out: int = 3
+    dropout: float = 0.05
 
 Loss_fn = torch.nn.CrossEntropyLoss
 Optimizer = torch.optim.AdamW
 
 @dataclass(frozen=True)
 class TrainConfig:
-    epochs: int = 150
+    epochs: int = 200
     batch_size: int = 32
     opttim_step_interval: int = 10 # n batches until optimizer steps
     lr: float = 1e-4 
@@ -46,7 +47,7 @@ class TrainConfig:
 class DataConfig:
     raw: Path = Path('/home/fnoble/data/OpenAlex-parquet/')
     staged: Path = Path('/home/fnoble/data/staged/')
-    max_len: int = 300
+    max_len: int = 500
     train_start: datetime = datetime(2000, 1, 1)
     train_end: datetime = datetime(2000, 3, 1)
     test_start: datetime = datetime(2000, 3, 1)
@@ -68,7 +69,7 @@ config = Config()
 def init_lr_scheduler(
     optimizer,
 ):
-    milestones = [10, 40]
+    milestones = [40, 40]
     
     sum = 0
     for x in milestones:
@@ -77,7 +78,7 @@ def init_lr_scheduler(
 
     warmup_scheduler = torch.optim.lr_scheduler.LinearLR(
         optimizer, 
-        start_factor=0.1, 
+        start_factor=0.5, 
         end_factor=1.0,
         total_iters=milestones[0],
         last_epoch=-1 # Used to implement restart from checkpoint
@@ -87,7 +88,7 @@ def init_lr_scheduler(
         optimizer,
         T_0=10,
         T_mult=1,
-        eta_min=1e-15,
+        eta_min=config.train.lr * 0.6,
         last_epoch=-1, # Used to implement restart from checkpoint
     )
 
