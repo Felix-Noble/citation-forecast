@@ -190,7 +190,8 @@ class H_ATTN(nn.Module):
         mask = mask.unsqueeze(0).expand(self.config.outer_heads, -1, -1, -1)
         for layer in self.layers:
             out, mask = layer(out, mask)
-
+        
+        out = out * mask[:, :, 0, :].unsqueeze(-1)
         out = out.flatten(-2, -1)
         out = self.head(out)
         return torch.mean(out, dim=0)    
