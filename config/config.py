@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 EXPERIMENT_NAME = 'AF-Psych-M'
 
-top_k = (500 for _ in range(8))
+top_k = (300 for _ in range(8))
 top_k = (*top_k, 256, 128, 64, 32, 16, 8)
 n_layers = len(top_k)
 selector_heads = tuple(8 for _ in range(n_layers))
@@ -47,7 +47,7 @@ class TrainConfig:
 class DataConfig:
     raw: Path = Path('/home/fnoble/data/OpenAlex-parquet/')
     staged: Path = Path('/home/fnoble/data/staged/')
-    max_len: int = 500
+    max_len: int = 300
     train_start: datetime = datetime(2000, 1, 1)
     train_end: datetime = datetime(2000, 3, 1)
     test_start: datetime = datetime(2000, 3, 1)
