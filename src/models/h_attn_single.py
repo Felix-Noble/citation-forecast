@@ -109,7 +109,7 @@ class HAttnBlock(nn.Module):
         self.mlp = MLP(config, device, dtype) 
         
     def forward(self, x:Tensor, mask: Tensor) -> tuple[Tensor, Tensor]:
-        OB, B, T, C = x.shape
+        B, T, C = x.shape
         x = nn.functional.rms_norm(x, (x.size(-1), ))
         scores = self.selective_attn(x, mask)  
         scores = scores * mask[:, 0, :].unsqueeze(-1)
