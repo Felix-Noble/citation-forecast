@@ -235,46 +235,23 @@ def eval_model(
     example_progress,
     examples_done,
     metric_tracker: ClassificationTracker,
-    copy_stream: torch.cuda.Stream,
     device: torch.device,
 ) -> None:
-    forward_finished = torch.cuda.Event()
-    batch_copy_finished = torch.cuda.Event()
-    output_copy_finished = torch.cuda.Event()
 
     model.eval()
     with torch.no_grad():
-        data_iterator = plusN_iterator(iter(dataloader), extra_iters=1)
-        with torch.cuda.stream(copy_stream):
-            batch_i, current_X, current_y, current_mask = next(data_iterator)
-            current_X = current_X.to(device, non_blocking=True).long()
-            current_y = current_y.to(device, non_blocking=True).long()
-            current_mask = current_mask.to(device, non_blocking=True)
-            batch_copy_finished.record()
-            output_copy_finished.record()
+        for batch_i, (X, y, mask) in enumerate(dataloader):
+            metric_tracker.process_values((y,), ('test_y',))
+            X = X.to(device).long()
+            y = y.to(device).long()
+            mask = mask.to(device)
+            out = model(X, mask)
+            loss = loss_fn(out.squeeze(-1), y)
 
-        for next_batch_i, next_X, next_y, next_mask in data_iterator:
-            output_copy_finished.wait()
-            batch_copy_finished.wait()
-            out = model(current_X, current_mask)
-            loss = loss_fn(out.squeeze(-1), current_y)
-            forward_finished.record() # 'forward' finished later to allow to loss -> cpu copy
+            loss_cpu = loss.detach().item()
 
-            with torch.cuda.stream(copy_stream):
-                if not torch.any(torch.isnan(next_X)):
-                    next_X_gpu = next_X.to(device, non_blocking=True)
-                    next_mask_gpu = next_mask.to(device, non_blocking=True)
-                batch_copy_finished.record()
-                next_y_gpu = next_y.to(device, non_blocking=True)
-                forward_finished.wait()
-                loss_cpu = loss.detach().item()
-                metric_tracker.log_metric('test_loss', loss_cpu, current_X.shape[0])
-                metric_tracker.process_values((current_y, out.detach()), ('test_y', 'test_logits'))
-                output_copy_finished.record()
-                if not torch.any(torch.isnan(next_X)):
-                    current_X = next_X_gpu.long()
-                    current_mask = next_mask_gpu
-                    current_y = next_y_gpu.long()
+            metric_tracker.log_metric('test_loss', loss_cpu, X.shape[0])
+            metric_tracker.process_values((out.detach(),), ('test_logits',))
 
             example_progress.update(examples_done, advance=config.train.batch_size)
 
@@ -313,7 +290,6 @@ def main(
     )
 
     scheduler = init_lr_scheduler(optimizer)
-    scheduler_i = 0
 
     train_dataset = _dataset(
         data_path=str(config.data.staged / data_path),
@@ -362,11 +338,6 @@ def main(
         _, max_mem = torch.cuda.mem_get_info()
     mem_used = mem_util_progress.add_task('Mem Util', total=max_mem* (1/(1024**2)))
 
-    copy_stream = torch.cuda.Stream()
-    forward_finished = torch.cuda.Event()
-    batch_copy_finished = torch.cuda.Event()
-    output_copy_finished = torch.cuda.Event()
-
     mlflow.set_experiment(EXPERIMENT_NAME)
     with mlflow.start_run(run_name=model.MODEL_NAME, nested=True):
 
@@ -379,52 +350,29 @@ def main(
             example_progress.reset(examples_done, description='Train examps', total=len(train_dataloader) * config.train.batch_size)
             eval_example_progress.reset(examples_done, description='Eval examps', total=len(test_dataloader) * config.train.batch_size)
 
-            train_iterator = plusN_iterator(iter(train_dataloader), extra_iters=1)
-            with torch.cuda.stream(copy_stream):
-                batch_i, current_X, current_y, current_mask = next(train_iterator)
-                current_X = current_X.to(device, non_blocking=True).long()
-                current_mask = current_mask.to(device, non_blocking=True)
-                current_y = current_y.to(device, non_blocking=True).long()
-                batch_copy_finished.record()
-                output_copy_finished.record()
-
-            for next_batch_i, next_X, next_y, next_mask in train_iterator:
-
-                output_copy_finished.wait()
-                batch_copy_finished.wait()
-                out = model(current_X, current_mask)
-                loss = loss_fn(out.squeeze(-1), current_y)
-                forward_finished.record() # 'forward' finished later to allow to loss -> cpu copy
+            for batch_i, (X, y, mask) in enumerate(train_dataloader):
+                metric_tracker.process_values((y,), ('train_y',))
+                X = X.to(device).long()
+                y = y.to(device).long()
+                mask = mask.to(device)
+                out = model(X, mask)
+                loss = loss_fn(out.squeeze(-1), y)
                 loss.backward()
+
                 if batch_i % config.train.opttim_step_interval == 0 or batch_i == n_batches:
                     optimizer.step()
                     optimizer.zero_grad() 
 
-                with torch.cuda.stream(copy_stream):
-                    if not torch.any(torch.isnan(next_X)):
-                        next_X_gpu = next_X.to(device, non_blocking=True)
-                        next_mask_gpu = next_mask.to(device, non_blocking=True)
-                    batch_copy_finished.record()
-                    next_y_gpu = next_y.to(device, non_blocking=True)
-                    forward_finished.wait()
-                    loss_cpu = loss.detach().item()
+                loss_cpu = loss.detach().item()
 
-                    metric_tracker.log_metric('train_loss', loss_cpu, current_X.shape[0])
-                    metric_tracker.process_values((current_y, out.detach()), ('train_y', 'train_logits'))
-                    mlflow.log_metric('train_loss-batch', loss_cpu, step = int((epoch-1) * examples_per_epoch + batch_i * config.train.batch_size))
-                    executor.submit(isnan_async, loss_cpu)
-
-                    output_copy_finished.record()
-
-                    if not torch.any(torch.isnan(next_X)):
-                        current_X = next_X_gpu.long()
-                        current_mask = next_mask_gpu
-                        current_y = next_y_gpu.long()
-                        batch_i = next_batch_i
+                metric_tracker.log_metric('train_loss', loss_cpu, X.shape[0])
+                metric_tracker.process_values((out.detach(),), ('train_logits',))
+                mlflow.log_metric('train_loss-batch', loss_cpu, step = int((epoch-1) * examples_per_epoch + batch_i * config.train.batch_size))
+                executor.submit(isnan_async, loss_cpu)
 
                 example_progress.update(examples_done, advance=config.train.batch_size)
-                mem_use, _ = torch.cuda.mem_get_info()
-                mem_util_progress.update(mem_used, complete=mem_use * (1/(1024**2)))
+                #mem_use, _ = torch.cuda.mem_get_info()
+                #mem_util_progress.update(mem_used, complete=mem_use * (1/(1024**2)))
 
             if epoch % config.train.checkpoint_interval == 0:
                 save_dir = os.path.join(artifact_path, EXPERIMENT_NAME, str(mlf_run.info.run_id))
@@ -446,7 +394,6 @@ def main(
                     example_progress=eval_example_progress,
                     examples_done=eval_examples_done,
                     metric_tracker=metric_tracker,
-                    copy_stream=copy_stream,
                     device=device,
                         )
 
