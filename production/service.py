@@ -2,7 +2,6 @@ from models.general import model, weight_path, config
 import os
 import modal
 import torch
-import json
 
 app = modal.App('citescout-general')
 
@@ -19,6 +18,7 @@ image = modal.Image.debian_slim().pip_install("torch", "transformers")
         '/tokenizer': tokenizer_volume
     }
 )
+
 class InferenceWrapper:
     @modal.enter()
     def setup(self):
