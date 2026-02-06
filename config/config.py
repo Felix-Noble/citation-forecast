@@ -69,7 +69,7 @@ config = Config()
 def init_lr_scheduler(
     optimizer,
 ):
-    milestones = [40, 40]
+    milestones = [40, 80]
     
     sum = 0
     for x in milestones:
