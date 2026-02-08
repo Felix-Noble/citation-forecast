@@ -57,9 +57,8 @@ def isnan_async(loss):
 def init_dataloader(
     dataset: Dataset[tuple[Tensor, ...] | Tensor],
     config: Config = config,
+    sampler = None,
 ) -> DataLoader[tuple[Tensor, ...] | Tensor]:
-
-    # TODO: add sample check here and integrate sampler
 
     dataloader = DataLoader(
         dataset,
@@ -68,6 +67,7 @@ def init_dataloader(
         prefetch_factor=2,
         pin_memory=True,
         shuffle=config.train.shuffle,
+        sampler = sampler,
     )
     return dataloader
 
@@ -291,6 +291,7 @@ def main(
 
     scheduler = init_lr_scheduler(optimizer)
 
+
     train_dataset = _dataset(
         data_path=str(config.data.staged / data_path),
         X='abstract_tokens',
@@ -315,9 +316,27 @@ def main(
         pad_value=config.model.pad_token,
         testing=testing
     )
+    class PortionSampler(torch.utils.data.Sampler):
+        def __init__(self, data_source, num_samples):
+            self.data_source = data_source
+            self.num_samples = num_samples
+
+        def __iter__(self):
+            # Generate random indices for the whole dataset
+            indices = torch.randperm(len(self.data_source))
+            # Return only a slice of them
+            return iter(indices[:self.num_samples].tolist())
+
+        def __len__(self):
+            return self.num_samples
 
     examples_per_epoch = len(train_dataset) # update this for when sampling is introduced
-    train_dataloader = init_dataloader(train_dataset)
+    train_sampler = None
+    if config.train.sample:
+        examples_per_epoch = config.train.sample
+        train_sampler = PortionSampler(train_dataset, config.train.sample)
+
+    train_dataloader = init_dataloader(train_dataset, sampler=train_sampler)
     test_dataloader = init_dataloader(test_dataset)
     n_batches = len(train_dataloader) 
 
