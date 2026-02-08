@@ -265,7 +265,7 @@ def eval_model(
 def main(
     data_path: VALID_PATHS = typer.Argument( 
         help='data path relative to config.data.staged'),
-    artifact_path: str = '/home/fnoble/Dropbox/experiment-tracking/artifacts',
+    artifact_path: str = '/home/fnoble/experiment-tracking/artifacts',
     compile: bool = False,
     testing: bool = False,
     progress: bool = True,
