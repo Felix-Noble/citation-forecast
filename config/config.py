@@ -20,8 +20,8 @@ class ModelConfig:
     selector_heads: tuple[int, ...] = selector_heads
     process_heads: tuple[int, ...] = process_heads
     n_layers: int = n_layers
-    embed_dim: int = 512
-    hidden_dim: int = 1024
+    embed_dim: int = 256
+    hidden_dim: int = 512
     n_out: int = 3
     dropout: float = 0.05
 
@@ -31,16 +31,16 @@ Optimizer = torch.optim.AdamW
 @dataclass(frozen=True)
 class TrainConfig:
     epochs: int = 200
-    batch_size: int = 32
-    opttim_step_interval: int = 10 # n batches until optimizer steps
-    lr: float = 1e-4 
+    batch_size: int = 64
+    opttim_step_interval: int = 5 # n batches until optimizer steps
+    lr: float = 5e-4 
     weight_decay: float = 0.9
     loss_fn: str = Loss_fn.__name__
     optimizer: str = Optimizer.__name__
-    eval_interval: int = 1
+    eval_interval: int = 5
     checkpoint_interval: int = 10
-    shuffle: bool = True
-    sample: bool = False
+    shuffle: bool = False
+    sample: int | None = 30_000
     mat_mul_precision: str = 'high'
 
 @dataclass(frozen=True)
@@ -48,10 +48,10 @@ class DataConfig:
     raw: Path = Path('/home/fnoble/data/OpenAlex-parquet/')
     staged: Path = Path('/home/fnoble/data/staged/')
     max_len: int = 300
-    train_start: datetime = datetime(2000, 1, 1)
-    train_end: datetime = datetime(2000, 3, 1)
-    test_start: datetime = datetime(2000, 3, 1)
-    test_end: datetime = datetime(2000, 6, 1)
+    train_start: datetime = datetime(2010, 1, 1)
+    train_end: datetime = datetime(2015, 1, 1)
+    test_start: datetime = datetime(2015, 1, 1)
+    test_end: datetime = datetime(2016, 1, 1)
 
 @dataclass(frozen=True)
 class LogConfig:
