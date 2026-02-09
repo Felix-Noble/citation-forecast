@@ -434,7 +434,7 @@ def main(
                 epoch=epoch,
             )
 
-            mlflow.log_metrics(metrics, step = epoch, synchronous=True)
+            mlflow.log_metrics(metrics, step = epoch, synchronous=False)
 
             epoch_progress.update(epochs_done, advance=1)
 
