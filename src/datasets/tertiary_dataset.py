@@ -5,5 +5,8 @@ from typing import override
 
 class TertiaryDataset(DF_Dataset):
     @override
+    def _format_X(self, x: Tensor) -> Tensor:
+        return x.long()
+    @override
     def _format_y(self, y: Tensor) -> Tensor:
-        return torch.round(y*2, decimals=0)
+        return torch.round(y*2, decimals=0).long()
