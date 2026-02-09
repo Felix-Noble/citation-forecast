@@ -384,19 +384,18 @@ def main(
                 out = model(X, mask)
                 loss = loss_fn(out.squeeze(-1), y)
 
-                with torch.cuda.stream(stream):
-                    loss_cpu = loss.detach().cpu().item()
-                    metric_tracker.log_metric('train_loss', loss_cpu, X.shape[0])
-                    metric_tracker.process_values((out.detach(), ), ('train_logits', ))
-                    mlflow.log_metric('train_loss-batch', loss_cpu, synchronous=False, step=int((epoch-1) * examples_per_epoch + batch_i * config.train.batch_size))
-                    executor.submit(isnan_async, loss_cpu)
 
                 loss.backward()
                 if batch_i % config.train.opttim_step_interval == 0 or batch_i == n_batches:
                     optimizer.step()
                     optimizer.zero_grad() 
 
-                torch.cuda.synchronize()
+                loss_cpu = loss.detach().cpu().item()
+                metric_tracker.log_metric('train_loss', loss_cpu, X.shape[0])
+                metric_tracker.process_values((out.detach(), ), ('train_logits', ))
+                executor.submit(isnan_async, loss_cpu)
+                mlflow.log_metric('train_loss-batch', loss_cpu, synchronous=False, step=int((epoch-1) * examples_per_epoch + batch_i * config.train.batch_size))
+
                 example_progress.update(examples_done, advance=config.train.batch_size)
                 #mem_use, _ = torch.cuda.mem_get_info()
                 #mem_util_progress.update(mem_used, complete=mem_use * (1/(1024**2)))
@@ -435,7 +434,7 @@ def main(
                 epoch=epoch,
             )
 
-            mlflow.log_metrics(metrics, step = epoch, synchronous=False)
+            mlflow.log_metrics(metrics, step = epoch, synchronous=True)
 
             epoch_progress.update(epochs_done, advance=1)
 
