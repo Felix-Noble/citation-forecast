@@ -393,7 +393,7 @@ def main(
                 loss_cpu = loss.detach().cpu().item()
                 metric_tracker.log_metric('train_loss', loss_cpu, X.shape[0])
                 metric_tracker.process_values((out.detach(), ), ('train_logits', ))
-                executor.submit(isnan_async, loss_cpu)
+                #executor.submit(isnan_async, loss_cpu)
                 mlflow.log_metric('train_loss-batch', loss_cpu, synchronous=False, step=int((epoch-1) * examples_per_epoch + batch_i * config.train.batch_size))
 
                 example_progress.update(examples_done, advance=config.train.batch_size)
