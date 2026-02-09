@@ -5,22 +5,22 @@ from pathlib import Path
 EXPERIMENT_NAME = 'AF-Psych-M'
 
 top_k = (300 for _ in range(8))
-top_k = (*top_k, 256, 128, 64, 32, 16, 8)
+top_k = (*top_k, 256, 128, 64, 32, 16, 8, 4)
 n_layers = len(top_k)
-selector_heads = tuple(8 for _ in range(n_layers))
-process_heads = tuple(8 for _ in range(n_layers))
+selector_heads = tuple(4 for _ in range(n_layers))
+process_heads = tuple(4 for _ in range(n_layers))
 
 @dataclass(frozen=True)
 class ModelConfig:
     model_name: str = 'h_attn_single'
     vocab_size: int = 201_088
     pad_token: int = 0
-    #outer_heads: int = 2
+    dtype: torch.dtype =  torch.float32
     top_k: tuple[int, ...] = top_k
     selector_heads: tuple[int, ...] = selector_heads
     process_heads: tuple[int, ...] = process_heads
     n_layers: int = n_layers
-    embed_dim: int = 256
+    embed_dim: int = 512
     hidden_dim: int = 512
     n_out: int = 3
     dropout: float = 0.05
@@ -32,15 +32,15 @@ Optimizer = torch.optim.AdamW
 class TrainConfig:
     epochs: int = 200
     batch_size: int = 64
-    opttim_step_interval: int = 5 # n batches until optimizer steps
-    lr: float = 5e-4 
+    opttim_step_interval: int = 50 # n batches until optimizer steps
+    lr: float = 1e-4 
     weight_decay: float = 0.9
     loss_fn: str = Loss_fn.__name__
     optimizer: str = Optimizer.__name__
     eval_interval: int = 5
     checkpoint_interval: int = 10
     shuffle: bool = False
-    sample: int | None = 30_000
+    sample: int | None = 100_032
     mat_mul_precision: str = 'high'
 
 @dataclass(frozen=True)
@@ -107,6 +107,9 @@ def init_lr_scheduler(
     return scheduler
 
 # Safety checks
+if config.train.sample:
+    assert config.train.sample % config.train.batch_size  == 0, 'sample % batch_size must == 0'
+
 if config.train.sample and config.train.shuffle:
     raise ValueError('trian.shuffle and train.sample cannot both be true')
 
