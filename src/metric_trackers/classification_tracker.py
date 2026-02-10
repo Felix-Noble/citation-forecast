@@ -4,6 +4,7 @@ import pandas as pd
 from rich.table import Table
 from rich.console import Console
 from sklearn.metrics import roc_auc_score, balanced_accuracy_score # pyright: ignore[reportUnknownVariableType, reportMissingTypeStubs] 
+import math
 import torch
 from pathlib import Path
 from logging import getLogger
@@ -204,7 +205,7 @@ class ClassificationTracker:
             df: pd.DataFrame = pd.DataFrame(self.metric_store[metric])
             score: float = (df['score'] * df['weight']).sum() / (df['weight'].sum())
             aggregate_metrics[metric] = round(score, 6)
-
+        aggregate_metrics = {k: v for k,v in aggregate_metrics.items() if math.isnan(v)} 
         return aggregate_metrics 
 
     def report(self, 
