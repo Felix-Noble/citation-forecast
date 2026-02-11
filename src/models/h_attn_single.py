@@ -52,7 +52,7 @@ class MultiHeadSelfAttn(nn.Module):
         
         out = nn.functional.scaled_dot_product_attention(Q, K, V, mask.unsqueeze(1).expand(-1, self.n_heads, -1, -1), dropout_p=self.dropout)
         
-        out = out.transpose(1, 2).contiguous().flatten(-2)
+        out = out.transpose(1, 2).contiguous().flatten(2,-1)
         out = self.head(out)
         return out
 
@@ -115,9 +115,10 @@ class HAttnBlock(nn.Module):
         x = nn.functional.rms_norm(x, (x.size(-1), ))
 
         if self.config.diff_k:
+            top_k = min(T, self.config.k)
             scores = self.selective_attn(x, mask)  
             scores = scores * mask[:, 0, :].unsqueeze(-1)
-            _,  inds = torch.topk(scores.squeeze(-1), self.config.k, dim=-1)
+            _,  inds = torch.topk(scores.squeeze(-1), top_k, dim=-1)
             inds, _ = torch.sort(inds.long(), dim=1)
             ordered_scores = torch.gather(
                 scores, 
@@ -133,7 +134,7 @@ class HAttnBlock(nn.Module):
             selected_mask = torch.gather(
                 mask,
                 dim=1,
-                index=inds.unsqueeze(-1).expand(-1, -1, self.config.k)
+                index=inds.unsqueeze(-1).expand(-1, -1, top_k) 
             )
             out = selected_tokens + self.mlp(
                 self.process_attn(selected_tokens * ordered_scores, selected_mask)
