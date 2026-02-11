@@ -18,6 +18,7 @@ class ModelConfig(BaseModel):
 
 class LayerConfig(BaseModel):
     k: PositiveInt
+    diff_k: bool
     selector_heads: PositiveInt
     process_heads: PositiveInt
     embed_dim: PositiveInt
@@ -51,7 +52,7 @@ class MultiHeadSelfAttn(nn.Module):
         
         out = nn.functional.scaled_dot_product_attention(Q, K, V, mask.unsqueeze(1).expand(-1, self.n_heads, -1, -1), dropout_p=self.dropout)
         
-        out = out.transpose(1, 2).contiguous().flatten(-2)
+        out = out.transpose(1, 2).contiguous().flatten(2,-1)
         out = self.head(out)
         return out
 
@@ -102,7 +103,8 @@ class HAttnBlock(nn.Module):
         self.device = device
         self.dtype = dtype
 
-        self.selective_attn =SelectiveAttn(config, device, dtype)
+        if config.diff_k:
+            self.selective_attn = SelectiveAttn(config, device, dtype)
 
         self.process_attn = MultiHeadSelfAttn(config.embed_dim, config.hidden_dim, config.hidden_dim, config.process_heads, config.dropout, device, dtype)
 
@@ -111,31 +113,38 @@ class HAttnBlock(nn.Module):
     def forward(self, x:Tensor, mask: Tensor) -> tuple[Tensor, Tensor]:
         B, T, C = x.shape
         x = nn.functional.rms_norm(x, (x.size(-1), ))
-        scores = self.selective_attn(x, mask)  
-        scores = scores * mask[:, 0, :].unsqueeze(-1)
-        _,  inds = torch.topk(scores.squeeze(-1), self.config.k, dim=-1)
-        inds, _ = torch.sort(inds.long(), dim=1)
-        ordered_scores = torch.gather(
-            scores, 
-            dim=1, 
-            index=inds.unsqueeze(-1)
-        )
-        selected_tokens = torch.gather(
-            x, 
-            dim=1, 
-            index=inds.unsqueeze(-1).expand(-1, -1, C)
-        )
-         
-        selected_mask = torch.gather(
-            mask,
-            dim=1,
-            index=inds.unsqueeze(-1).expand(-1, -1, self.config.k)
-        )
 
-        out = selected_tokens + self.mlp(
-            self.process_attn(selected_tokens * ordered_scores, selected_mask)
-        )
-        return out.contiguous(), selected_mask.contiguous()
+        if self.config.diff_k:
+            top_k = min(T, self.config.k)
+            scores = self.selective_attn(x, mask)  
+            scores = scores * mask[:, 0, :].unsqueeze(-1)
+            _,  inds = torch.topk(scores.squeeze(-1), top_k, dim=-1)
+            inds, _ = torch.sort(inds.long(), dim=1)
+            ordered_scores = torch.gather(
+                scores, 
+                dim=1, 
+                index=inds.unsqueeze(-1)
+            )
+            selected_tokens = torch.gather(
+                x, 
+                dim=1, 
+                index=inds.unsqueeze(-1).expand(-1, -1, C)
+            )
+             
+            selected_mask = torch.gather(
+                mask,
+                dim=1,
+                index=inds.unsqueeze(-1).expand(-1, -1, top_k) 
+            )
+            out = selected_tokens + self.mlp(
+                self.process_attn(selected_tokens * ordered_scores, selected_mask)
+            )
+            return out.contiguous(), selected_mask.contiguous()
+        else:
+            out = x + self.mlp(
+                self.process_attn(x, mask)
+            )
+            return out.contiguous(), mask
 
 class H_ATTN(nn.Module):
     MODEL_NAME = 'h_attn_single'
@@ -153,11 +162,17 @@ class H_ATTN(nn.Module):
         self.config = config 
 
         self.embed = nn.Embedding(config.vocab_size, config.embed_dim, device=device, dtype=dtype)
-        
+        top_k_diffs: list[bool] = [False for _ in range(config.n_layers)] 
+        for i in range(config.n_layers - 1):
+            if  config.top_k[i] > config.top_k[i + 1]:
+                top_k_diffs[i + 1] = True
+            assert config.top_k[i] >= config.top_k[i + 1], 'top_k cannot increase in subsequent layers'
+
         layers = []
         for i in range(config.n_layers):
             layer_config = LayerConfig(
                 k=config.top_k[i],
+                diff_k = top_k_diffs[i],
                 selector_heads=config.selector_heads[i],
                 process_heads=config.process_heads[i],
                 embed_dim=config.embed_dim,
@@ -180,7 +195,7 @@ class H_ATTN(nn.Module):
         mask = mask
         for layer in self.layers:
             out, mask = layer(out, mask)
-        
+
         out = out * mask[:, 0, :].unsqueeze(-1)
         out = out.flatten(-2, -1)
         out = self.head(out)
