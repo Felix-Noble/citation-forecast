@@ -4,6 +4,7 @@ logs/
 openai/
 types/
 testing/
+test.py
 plan.md
 torch_compile_debug/
 weights/
