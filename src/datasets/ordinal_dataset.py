@@ -8,7 +8,7 @@ from torch.utils.data import Dataset
 from typing import cast
 from rich.console import Console
 
-from config.config import config
+from config import Config, config
 from src.utils.logging import setup_logger
 from pathlib import Path
 from logging import getLogger
@@ -18,72 +18,72 @@ console = Console()
 
 dask.config.set({"dataframe.convert-string": False})
 
-class DF_Dataset(Dataset[tuple[Tensor, ...]]):
+class OrdinalDataset(Dataset[tuple[Tensor, ...]]):
     def __init__(self, 
                  data_path: str,
                  X: str,
+                 y: str,
                  t_start: int,
                  t_end: int,
-                 y: str | None = None,
-                 max_len: int = int(1e32),
-                 pad_value: int = 0,
+                 config: Config = config,
                  pad: bool = True,
                  truncate: bool | str = 'drop',
                  return_mask: bool = False,
                  testing: bool = False,
                  ):
         super().__init__()
+        self.X: str = X
+        self.y: str = y
+        self.t_start: int = t_start
+        self.t_end: int = t_end
+        self.MAX_LEN: int = config.model.max_len
+        self.PAD_VALUE: int = config.model.pad_value
+        self.N_BUCKETS: int = config.model.n_out
+        self.PAD: bool = pad
+        self.RETURN_MASK: bool = return_mask
+        self.TRUNCATE: bool | str = truncate
 
         if y is None:
-            columns = [X]
+            columns = [self.X]
         else:
-            columns = list(set([X, y]))
+            columns = list(set([self.X, self.y]))
         
         self.df: dd.DataFrame = cast(dd.DataFrame, 
                                      dd.read_parquet(data_path, columns=columns + ['publication_date_int'], engine='fastparquet') # pyright: ignore[reportPrivateImportUsage, reportUnknownMemberType]
                                      ) 
 
-        self.df = self.df[(self.df['publication_date_int'] >= t_start) & (self.df['publication_date_int'] < t_end)]
+        self.df = self.df[(self.df['publication_date_int'] >= self.t_start) & (self.df['publication_date_int'] < self.t_end)]
         self.df = self.df[columns]
         self.df = cast(pd.DataFrame, 
                        self.df.compute() # pyright: ignore[reportUnknownMemberType]
                        ) 
         prev_n = self.df.shape[0]
-        self.df = self.df.dropna(subset=X)
-        logger.info(f"Dropped {prev_n - self.df.shape[0]} missing '{X}' rows")
-        if y is not None:
+        self.df = self.df.dropna(subset=self.X)
+        logger.info(f"Dropped {prev_n - self.df.shape[0]} missing '{self.X}' rows")
+        if self.y is not None:
             prev_n = self.df.shape[0]
-            self.df = self.df.dropna(subset=y)
-            logger.info(f"Dropped {prev_n - self.df.shape[0]} missing '{y}' rows")
+            self.df = self.df.dropna(subset=self.y)
+            logger.info(f"Dropped {prev_n - self.df.shape[0]} missing '{self.y}' rows")
 
         if truncate == 'drop':
             prev_n = self.df.shape[0]
-            self.df[f'{X}_len'] =  self.df[X].apply(lambda x : len(x))# pyright: ignore[reportUnknownMemberType]
-            self.df = self.df.loc[self.df[f'{X}_len'] <= max_len, columns]
-            logger.info(f"Dropped {prev_n - self.df.shape[0]:,} '{X}' len > {max_len:,} | {self.df.shape[0]:,} remaining") # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType]
+            self.df[f'{self.X}_len'] =  self.df[self.X].apply(lambda x : len(x))# pyright: ignore[reportUnknownMemberType]
+            self.df = self.df.loc[self.df[f'{self.X}_len'] <= self.max_len, columns]
+            logger.info(f"Dropped {prev_n - self.df.shape[0]:,} '{self.X}' len > {self.max_len:,} | {self.df.shape[0]:,} remaining") # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType]
 
         if testing:
             self.df = self.df.sample(n=473, replace=True)
 
         self.df.reset_index(drop=True, inplace=True) 
 
-        self.X: str = X
-        self.Y: str | None = y
-
-        self.PAD: bool = pad
-        self.RETURN_MASK: bool = return_mask
-        self.TRUNCATE: bool | str = truncate
-        self.MAX_LEN: int = max_len
-        self.PAD_VALUE: int = pad_value
-
     def __len__(self) -> int:
         return self.df.shape[0]
 
     def _format_X(self, x: Tensor) -> Tensor:
-        return x
+        return x.long()
 
     def _format_y(self, y: Tensor) -> Tensor:
-        return y
+        return torch.round(y * (self.N_BUCKETS - 1), decimals=0).long()
 
     def __getitem__(self, idx: int) -> tuple[Tensor, ...]:
         x: Tensor = torch.tensor(self.df.loc[idx, self.X], dtype=torch.float32)
