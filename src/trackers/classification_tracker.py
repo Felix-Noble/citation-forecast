@@ -9,7 +9,7 @@ import torch
 from pathlib import Path
 from logging import getLogger
 from src.utils.logging import setup_logger
-from config.config import config
+from config import config
 
 logger = getLogger(Path(__file__).stem)
 _ = setup_logger(logger, config.logging)
