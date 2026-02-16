@@ -135,7 +135,7 @@ def main(
     with mlflow.start_run(run_name=run_name):
 
         mlf_run = mlflow.active_run()
-        log_params(data_path, scheduler)
+        log_params(config.train.dataset, scheduler)
 
         for epoch in range(1, config.train.epochs + 1):
             model.train()
