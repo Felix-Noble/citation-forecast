@@ -42,6 +42,7 @@ class TrainConfig:
     shuffle: bool = False
     sample: int | None = 100_032
     mat_mul_precision: str = 'high'
+    dataset: str = 'psychology_clean'
     train_start: datetime = datetime(2010, 1, 1)
     train_end: datetime = datetime(2015, 1, 1)
     test_start: datetime = datetime(2015, 1, 1)
