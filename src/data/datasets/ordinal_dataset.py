@@ -1,12 +1,9 @@
-import dask
-import dask.dataframe as dd
+import polars as pl
 import pandas as pd  
 import torch.nn as nn
 import torch
 from torch import Tensor
 from torch.utils.data import Dataset
-from typing import cast
-from rich.console import Console
 
 from config import Config, config
 from src.utils.logging import setup_logger
@@ -14,9 +11,6 @@ from pathlib import Path
 from logging import getLogger
 logger = getLogger(Path(__file__).stem)
 _ = setup_logger(logger, config.logging)
-console = Console()
-
-dask.config.set({"dataframe.convert-string": False})
 
 class OrdinalDataset(Dataset[tuple[Tensor, ...]]):
     def __init__(self, 
@@ -29,7 +23,7 @@ class OrdinalDataset(Dataset[tuple[Tensor, ...]]):
                  pad: bool = True,
                  truncate: bool | str = 'drop',
                  return_mask: bool = False,
-                 testing: bool = False,
+                 dry_run: bool = False,
                  ):
         super().__init__()
         self.X: str = X
@@ -47,16 +41,18 @@ class OrdinalDataset(Dataset[tuple[Tensor, ...]]):
             columns = [self.X]
         else:
             columns = list(set([self.X, self.y]))
-        
-        self.df: dd.DataFrame = cast(dd.DataFrame, 
-                                     dd.read_parquet(data_path, columns=columns + ['publication_date_int'], engine='fastparquet') # pyright: ignore[reportPrivateImportUsage, reportUnknownMemberType]
-                                     ) 
+        columns += ['publication_date_int']        
 
-        self.df = self.df[(self.df['publication_date_int'] >= self.t_start) & (self.df['publication_date_int'] < self.t_end)]
-        self.df = self.df[columns]
-        self.df = cast(pd.DataFrame, 
-                       self.df.compute() # pyright: ignore[reportUnknownMemberType]
-                       ) 
+        self.lf: pl.LazyFrame = (
+                pl.scan_parquet(data_path)
+                .select(columns)
+                .filter((pl.col('publication_date_int') >= self.t_start) |
+                        pl.col('publication_date_int') < self.t_end)
+                ) 
+        if dry_run:
+            self.lf = self.lf.slice(0, (config.train.batch_size * 3) - 1)
+
+        self.df: pd.DataFrame = self.lf.collect().to_pandas()
         prev_n = self.df.shape[0]
         self.df = self.df.dropna(subset=self.X)
         logger.info(f"Dropped {prev_n - self.df.shape[0]} missing '{self.X}' rows")
@@ -68,11 +64,8 @@ class OrdinalDataset(Dataset[tuple[Tensor, ...]]):
         if truncate == 'drop':
             prev_n = self.df.shape[0]
             self.df[f'{self.X}_len'] =  self.df[self.X].apply(lambda x : len(x))# pyright: ignore[reportUnknownMemberType]
-            self.df = self.df.loc[self.df[f'{self.X}_len'] <= self.max_len, columns]
-            logger.info(f"Dropped {prev_n - self.df.shape[0]:,} '{self.X}' len > {self.max_len:,} | {self.df.shape[0]:,} remaining") # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType]
-
-        if testing:
-            self.df = self.df.sample(n=473, replace=True)
+            self.df = self.df.loc[self.df[f'{self.X}_len'] <= self.MAX_LEN, columns]
+            logger.info(f"Dropped {prev_n - self.df.shape[0]:,} '{self.X}' len > {self.MAX_LEN:,} | {self.df.shape[0]:,} remaining") # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType]
 
         self.df.reset_index(drop=True, inplace=True) 
 
@@ -95,8 +88,8 @@ class OrdinalDataset(Dataset[tuple[Tensor, ...]]):
        
         x = self._format_X(x)
         y = torch.tensor(float('nan'), dtype=torch.float32) 
-        if self.Y is not None:
-            y = torch.tensor(self.df.loc[idx, self.Y], dtype=torch.float32)
+        if self.y is not None:
+            y = torch.tensor(self.df.loc[idx, self.y], dtype=torch.float32)
             y = self._format_y(y)
 
         if self.RETURN_MASK:

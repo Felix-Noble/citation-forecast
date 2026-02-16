@@ -1,4 +1,4 @@
-# src/samplers/portion_sampler.py
+# src/data/samplers/portion_sampler.py
 import torch
 
 class PortionSampler(torch.utils.data.Sampler):
@@ -14,4 +14,3 @@ class PortionSampler(torch.utils.data.Sampler):
 
     def __len__(self):
         return self.num_samples
-
