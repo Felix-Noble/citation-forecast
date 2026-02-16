@@ -1,42 +1,28 @@
 #!/usr/bin/env python3
 # train.py
-from config import Config, config, env, Loss_fn, Optimizer
-from src.types.valid_paths import VALID_PATHS
+from config import config, env, Loss_fn, Optimizer
 from src.utils.logging import setup_logger
-from src.builders import build_ordinal_dataset, build_lr_scheduler, build_dataloader, build_tracker_params
-from src.samplers import PortionSampler
-from src.trackers import ClassificationTracker
-from src.datasets import OrdinalDataset
-from src.mlflow import log_params, log_lr
-from src.callbacks import isnan_async
-from src.eval import eval
-from src.models.registry import get_model
+from src.builders import \
+        build_ordinal_datasets, \
+        build_progress_bars, \
+        build_lr_scheduler, \
+        build_dataloader, \
+        build_tracker_params, \
+        build_model
+from src.data import PortionSampler
+from src.training import eval
+from src.training.callbacks import isnan_async
+from src.training.tracking import ClassificationTracker, log_params, log_lrs
 
 import torch
-import torch.nn as nn
-from torch import Tensor
-from torch.utils.data import Dataset, DataLoader
-from typing import Iterator
-from concurrent.futures import ThreadPoolExecutor
 import os
-from rich.traceback import install
 import typer
 from contextlib import nullcontext
 from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor
 from logging import getLogger
 import mlflow
 mlflow.set_tracking_uri(env.TRACKING_URI)
-
-# 3. Enable Math Attention (The failsafe - slowest but guaranteed to work)
-# env variables to spoof hipblaslt into working 
-#HSA_OVERRIDE_GFX_VERSION=11.0.0 
-#ROCBLAS_USE_HIPBLASLT=1 
-#TORCH_BLAS_PREFER_HIPBLASLT=1
-# logging verbosity
-#PYTORCH_TUNABLEOP_ENABLED=1
-#PYTORCH_TUNABLEOP_VERBOSE=1
-
-#torch.backends.cuda.matmul.allow_tf32 = False 
 
 logger = getLogger(Path(__file__).stem)
 _ = setup_logger(logger, config.logging)
@@ -85,8 +71,11 @@ def main(
     device: torch.device = torch.device('cuda') if torch.cuda.is_available() and gpu else torch.device('cpu')
     assert (device == 'cuda' or not gpu), 'No GPU available on this device, use --no-gpu option'
 
-    model = get_model(config.model)(config.model, device, config.model.dtype)
-    logger.info(f'Running "{model.MODEL_NAME}" on {device}{" TESTING" if testing else ""}')
+    model = build_model(device=device)
+    if run_suffix:
+        run_name = config.model.model_name + '-' + str(run_suffix)
+
+    logger.info(f'Run: "{run_name}" ({config.model.model_name}) | Device: {device}{" | DRY-RUN" if dry_run else ""}')
     if compile:
         model.compile(fullgraph=True, mode='default')
 
