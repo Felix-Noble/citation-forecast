@@ -147,7 +147,7 @@ class HAttnBlock(nn.Module):
             )
             return out.contiguous(), mask
 
-@model_registry()
+@model_registry
 class H_ATTN_SINGLE(nn.Module):
     config_schema = ModelConfig
     def __init__(
