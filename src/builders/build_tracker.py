@@ -1,5 +1,5 @@
 from config import Config, config
-from ..trackers import StoreParams
+from src.training.tracking.classification_tracker import StoreParams
 import torch
 
 def build_tracker_params(
