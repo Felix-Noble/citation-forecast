@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-# train.py
 from config import config, env, Loss_fn, Optimizer
 from src.utils.logging import setup_logger
 from src.builders import \
@@ -21,17 +19,13 @@ from contextlib import nullcontext
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 from logging import getLogger
-import mlflow
-mlflow.set_tracking_uri(env.TRACKING_URI)
 
 logger = getLogger(Path(__file__).stem)
 _ = setup_logger(logger, config.logging)
 
-logger.info(f'Mlflow connection established at {env.TRACKING_URI}') 
-
 app = typer.Typer(pretty_exceptions_enable=False)
 
-@app.command()
+@app.callback(invoke_without_command=True)
 def main(
     run_name: str = typer.Option(
         '',
@@ -120,6 +114,9 @@ def main(
     examples_done = example_progress.add_task('Train Examples', total=len(train_dataloader) * config.train.batch_size)
     eval_examples_done = eval_example_progress.add_task('Eval Examples', total=len(test_dataloader) * config.train.batch_size)
 
+    import mlflow
+    mlflow.set_tracking_uri(env.TRACKING_URI)
+    logger.info(f'Mlflow connection established at {env.TRACKING_URI}') 
     mlflow.set_experiment(env.EXPERIMENT)
     with mlflow.start_run(run_name=run_name):
 
