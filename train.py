@@ -21,6 +21,7 @@ from concurrent.futures import ThreadPoolExecutor
 import os
 from rich.traceback import install
 import typer
+from contextlib import nullcontext
 from pathlib import Path
 from logging import getLogger
 import mlflow
@@ -46,17 +47,43 @@ app = typer.Typer(pretty_exceptions_enable=False)
 
 @app.command()
 def main(
-    data_path: VALID_PATHS = typer.Argument( 
-        help='data path relative to config.data.staged'),
-    compile: bool = False,
-    testing: bool = False,
-    progress: bool = True,
-    gpu: bool = True,
+    run_name: str = typer.Option(
+        '',
+        '--name', '-n',
+        help = 'MLflow run name'
+        ),
+    run_suffix: str = typer.Option(
+        '',
+        '--suffix', '-s',
+        help = 'MLflow run suffix (to model name)'
+        ),
+    compile: bool=typer.Option(
+        False,
+        '--compile/--no-compile', '-c',
+        help = 'compile model'
+        ),
+    dry_run: bool=typer.Option(
+        False,
+        '--dry-run', '--dry',
+        help = 'Run through minimal samples for testing',
+        ),
+    progress: bool=typer.Option(
+        True,
+        '--progress/--no-progress',
+        help = 'Show Epoch/Example progress bars',
+        ),
+    gpu: bool=typer.Option(
+        True,
+        '--gpu/--no-gpu',
+        help = 'Use GPU as device'
+        ),
 ) -> None:
     " Main Loop "
-
+    assert not (run_name and run_suffix), "Either 'run-name' or 'run-suffix' must be specified"
+    assert (run_name or run_suffix), "One of 'run-name' or 'run-suffix' must be specified"
     torch.set_float32_matmul_precision(config.train.mat_mul_precision)
     device: torch.device = torch.device('cuda') if torch.cuda.is_available() and gpu else torch.device('cpu')
+    assert (device == 'cuda' or not gpu), 'No GPU available on this device, use --no-gpu option'
 
     model = get_model(config.model)(config.model, device, config.model.dtype)
     logger.info(f'Running "{model.MODEL_NAME}" on {device}{" TESTING" if testing else ""}')
@@ -91,7 +118,9 @@ def main(
 
     executor = ThreadPoolExecutor(max_workers=2)
 
-    stream = torch.cuda.Stream()
+    stream = torch.cuda.Stream() if torch.cuda.is_available() else None
+    stream_context = torch.cuda.stream(stream) if torch.cuda.is_available() else nullcontext()
+    stream_sync = torch.cuda.synchronize if torch.cuda.is_available() else lambda : None
 
     ( epoch_progress, 
       example_progress, 
@@ -102,8 +131,8 @@ def main(
     examples_done = example_progress.add_task('Train Examples', total=len(train_dataloader) * config.train.batch_size)
     eval_examples_done = eval_example_progress.add_task('Eval Examples', total=len(test_dataloader) * config.train.batch_size)
 
-    mlflow.set_experiment(env.EXPERIMENT_NAME)
-    with mlflow.start_run(run_name=model.MODEL_NAME, nested=True):
+    mlflow.set_experiment(env.EXPERIMENT)
+    with mlflow.start_run(run_name=run_name):
 
         mlf_run = mlflow.active_run()
         log_params(data_path, scheduler)
@@ -116,11 +145,11 @@ def main(
 
             for batch_i, (X, y, mask) in enumerate(train_dataloader):
                 metric_tracker.process_values((y,), ('train_y',))
-                with torch.cuda.stream(stream):
+                with stream_context:
                     X = X.to(device, non_blocking=True)
                     y = y.to(device, non_blocking=True)
                     mask = mask.to(device, non_blocking=True)
-                torch.cuda.synchronize()
+                stream_sync()
 
                 out = model(X, mask)
                 loss = loss_fn(out.squeeze(-1), y)
@@ -147,7 +176,7 @@ def main(
                 mlflow.log_artifact(save_path)
                 # save model state and run id, load each on restart (pass as option)
             
-            mlflow.log_metric({'lr',scheduler.get_last_lr()}, step=epoch)
+            log_lrs(scheduler, epoch) 
             scheduler.step() 
 
             if epoch % config.train.eval_interval == 0:
@@ -157,7 +186,8 @@ def main(
                     dataloader=test_dataloader,
                     example_progress=eval_example_progress,
                     examples_done=eval_examples_done,
-                    stream=stream,
+                    stream_context=stream_context,
+                    stream_sync=stream_sync,
                     metric_tracker=metric_tracker,
                     device=device,
                         )
