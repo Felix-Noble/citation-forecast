@@ -77,7 +77,7 @@ def main(
         )
 
     scheduler = build_lr_scheduler(optimizer)
-    train_dataset, test_dataset = build_ordinal_dataset(data_path=data_path, testing=testing)
+    train_dataset, test_dataset = build_ordinal_datasets(dataset=config.train.dataset, dry_run=dry_run)
 
     examples_per_epoch = len(train_dataset) # update this for when sampling is introduced
     train_sampler = None
