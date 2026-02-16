@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-from config.config import config
+from config import config, env
 from src.utils.logging import setup_logger
 from logging import getLogger
 from pathlib import Path
@@ -15,7 +15,7 @@ for f in REQUIRED_PATHS:
         logger.info(f'Initialising dir: {f}')
         os.makedirs(f)
 
-FOUND_PATHS: tuple[str, ...] = tuple(f'"{f.stem}"' for f in config.data.staged.glob('*'))
+FOUND_PATHS: tuple[str, ...] = tuple(f'"{f.stem}"' for f in env.STAGED_LOC.glob('*'))
 valid_paths_type = f'''
 from typing import Literal 
 VALID_PATHS = Literal[{", ".join(FOUND_PATHS)}]
