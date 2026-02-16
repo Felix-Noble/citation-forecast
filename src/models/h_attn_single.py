@@ -1,3 +1,4 @@
+from ._registry import model_registry
 from pydantic import BaseModel, PositiveInt, PositiveFloat
 import torch
 from torch import Tensor
@@ -146,8 +147,8 @@ class HAttnBlock(nn.Module):
             )
             return out.contiguous(), mask
 
-class H_ATTN(nn.Module):
-    MODEL_NAME = 'h_attn_single'
+@model_registry()
+class H_ATTN_SINGLE(nn.Module):
     config_schema = ModelConfig
     def __init__(
             self, 
