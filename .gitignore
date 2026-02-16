@@ -1,7 +1,6 @@
 __pycache__/
 logs/
 openai/
-types/
 testing/
 test.py
 plan.md
