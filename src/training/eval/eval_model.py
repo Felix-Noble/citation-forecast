@@ -1,9 +1,9 @@
-# src/eval/eval.py 
+# src/training/eval/eval_model.py 
 from ..tracking import ClassificationTracker
 from config import config
 import torch
 import torch.nn as nn
-import torch.utils.data.DataLoader
+from torch.utils.data import DataLoader
 
 def eval(
     model: nn.Module,
@@ -11,7 +11,8 @@ def eval(
     dataloader: DataLoader,
     example_progress,
     examples_done,
-    stream,
+    stream_context,
+    stream_sync,
     metric_tracker: ClassificationTracker,
     device: torch.device,
     config = config,
@@ -21,11 +22,11 @@ def eval(
     with torch.no_grad():
         for batch_i, (X, y, mask) in enumerate(dataloader):
             metric_tracker.process_values((y,), ('test_y',))
-            with torch.cuda.stream(stream):
+            with stream_context:
                 X = X.to(device, non_blocking=True)
                 y = y.to(device, non_blocking=True)
                 mask = mask.to(device, non_blocking=True)
-            torch.cuda.synchronize()
+            stream_sync()
 
             out = model(X, mask)
             loss = loss_fn(out.squeeze(-1), y)
