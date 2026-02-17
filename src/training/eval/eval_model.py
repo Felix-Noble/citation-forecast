@@ -31,9 +31,9 @@ def eval_model(
             out = model(X, mask)
             loss = loss_fn(out.squeeze(-1), y)
 
-            #loss_cpu = loss.detach().item()
-            #metric_tracker.log_metric('test_loss', loss_cpu, X.shape[0])
-            metric_tracker.process_values((out.detach(), loss.detach()), ('test_logits', 'test_loss'))
+            loss_cpu = loss.detach().item()
+            metric_tracker.log_metric('test_loss', loss_cpu, X.shape[0])
+            metric_tracker.process_values((out.detach(), ), ('test_logits', ))
             example_progress.update(examples_done, advance=config.train.batch_size)
 
     _ = metric_tracker.calc_metrics(
