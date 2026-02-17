@@ -1,11 +1,14 @@
 # config/__init__.py
-from .config import Config, Loss_fn, Optimizer
+from .config import Config
 from .env import Env
 
 config: Config = Config()
 env: Env = Env()
 
-__all__ = [ 'Config', 'config', 'env', 'Loss_fn', 'Optimizer']
+__all__ = [
+        'config', 'Config',
+        'env'
+        ]
 
 # Safety checks
 if config.train.sample:

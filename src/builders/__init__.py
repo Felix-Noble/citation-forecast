@@ -6,6 +6,8 @@ from .build_tracker import build_tracker_params
 from .build_lr_scheduler import build_lr_scheduler
 from .build_progress_bars import build_progress_bars
 from .build_model import build_model
+from .build_loss import build_loss
+from .build_optimizer import build_optimizer
 
 __all__ = [ 'build_ordinal_datasets',
            'build_dataloader',
@@ -13,4 +15,6 @@ __all__ = [ 'build_ordinal_datasets',
            'build_lr_scheduler',
            'build_progress_bars',
            'build_model',
+           'build_loss',
+           'build_optimizer'
            ]

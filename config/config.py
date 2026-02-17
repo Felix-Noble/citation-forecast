@@ -24,9 +24,6 @@ class ModelConfig:
     n_out: int = 3
     dropout: float = 0.05
 
-Loss_fn = torch.nn.CrossEntropyLoss
-Optimizer = torch.optim.AdamW
-
 @dataclass(frozen=True)
 class TrainConfig:
     epochs: int = 200
@@ -35,8 +32,8 @@ class TrainConfig:
     lr: float = 1e-4 
     lr_milestones: tuple[int, ...] = (40, 80)
     weight_decay: float = 0.9
-    loss_fn: str = Loss_fn.__name__
-    optimizer: str = Optimizer.__name__
+    loss_fn: str = 'CrossEntropyLoss'
+    optimizer: str = 'AdamW'
     eval_interval: int = 5
     checkpoint_interval: int = 10
     shuffle: bool = False

@@ -1,4 +1,4 @@
-from config import config, env, Loss_fn, Optimizer
+from config import config, env
 from src.utils.logging import setup_logger
 from src.builders import \
         build_ordinal_datasets, \
@@ -6,7 +6,9 @@ from src.builders import \
         build_lr_scheduler, \
         build_dataloader, \
         build_tracker_params, \
-        build_model
+        build_model, \
+        build_loss, \
+        build_optimizer
 from src.data import PortionSampler
 from src.training import eval
 from src.training.callbacks import isnan_async
@@ -73,8 +75,8 @@ def main(
     if compile:
         model.compile(fullgraph=True, mode='default')
 
-    loss_fn = Loss_fn()
-    optimizer = Optimizer(
+    loss_fn = build_loss()
+    optimizer = build_optimizer(
         model.parameters(),
         lr = config.train.lr,
         weight_decay = config.train.weight_decay,
