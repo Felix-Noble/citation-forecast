@@ -12,7 +12,7 @@ from src.builders import \
 from src.data import PortionSampler
 from .eval import eval_model
 from .callbacks import isnan_async
-from .tracking import ClassificationTracker, log_params, log_lrs
+from .tracking import OneDDistributionTracker, log_params, log_lrs
 
 import torch
 import os
@@ -83,7 +83,7 @@ def main(
         lr = config.train.lr,
         weight_decay = config.train.weight_decay,
     )
-    metric_tracker = ClassificationTracker(
+    metric_tracker = OneDDistributionTracker(
         build_tracker_params(device=device),
         dtype=torch.float32,
         device=device,
@@ -102,6 +102,7 @@ def main(
     train_dataloader = build_dataloader(train_dataset, sampler=train_sampler)
     test_dataloader = build_dataloader(test_dataset)
     n_batches = len(train_dataloader) 
+    grad_accumulation_steps_gpu = torch.tensor(config.train.grad_accumulation_steps, device=device) 
 
     executor = ThreadPoolExecutor(max_workers=2)
 
@@ -141,17 +142,21 @@ def main(
                     mask = mask.to(device, non_blocking=True)
                 stream_sync()
 
-                out = model(X, mask)
-                loss = loss_fn(out.squeeze(-1), y)
+                logits, out, sigma = model(X, mask)
+                loss = loss_fn(out, sigma, y)
+                loss_cpu = loss.detach().item()
+                sigma_cpu = torch.mean(sigma.detach()).item() 
+
+                loss = loss / grad_accumulation_steps_gpu 
 
                 loss.backward()
-                if batch_i % config.train.opttim_step_interval == 0 or batch_i == n_batches:
+                if batch_i % config.train.grad_accumulation_steps == 0 or batch_i == n_batches:
                     optimizer.step()
                     optimizer.zero_grad() 
 
-                loss_cpu = loss.detach().cpu().item()
                 metric_tracker.log_metric('train_loss', loss_cpu, X.shape[0])
-                metric_tracker.process_values((out.detach(), ), ('train_logits', ))
+                metric_tracker.log_metric('train_sigma', sigma_cpu, X.shape[0])
+                metric_tracker.process_values((logits.detach(), ), ('train_logits', ))
                 executor.submit(isnan_async, loss_cpu, logger)
                 mlflow.log_metric('train_loss-batch', loss_cpu, synchronous=False, step=int((epoch-1) * examples_per_epoch + batch_i * config.train.batch_size))
 
