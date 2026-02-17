@@ -12,7 +12,7 @@ process_heads = tuple(4 for _ in range(n_layers))
 class ModelConfig:
     model_name: str = 'h_attn_single'
     vocab_size: int = 201_088
-    pad_token: int = 0
+    pad_token_id: int = 0
     dtype: torch.dtype =  torch.float32
     top_k: tuple[int, ...] = top_k
     selector_heads: tuple[int, ...] = selector_heads
