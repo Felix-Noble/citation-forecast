@@ -59,10 +59,9 @@ class ClassificationTracker:
         self.buffer = buffer
         self.store_params: dict[str, StoreParams] = {params.name: params for params in store_params}
         self.stores: dict[str, Store] = {params.name: self._init_store(params) for params in store_params}
-
-        self.metric_store: dict[str, list[MetricTuple]] = {}
-        self.metric_df: pd.DataFrame = pd.DataFrame()
-
+        
+        self._init_metric_stores()
+        
         # rich console 
         self.console: Console = Console()
 
@@ -78,6 +77,10 @@ class ClassificationTracker:
             buffer_cursor=torch.tensor(0, dtype=torch.int32, device=self.device),
             store_cursor=0,
         )
+    def _init_metric_stores(self) -> None:
+        self.metric_store: dict[str, list[MetricTuple]] = {}
+        self.metric_df: pd.DataFrame = pd.DataFrame()
+
     def _reset_store(self, store: Store) -> Store:
         self.stores[store.name] = self._init_store(self.store_params[store.name])
         return self.stores[store.name]
@@ -85,7 +88,8 @@ class ClassificationTracker:
     def clear(self) -> None:
         for store in self.stores.values():
             _ = self._reset_store(store)
-            
+        self._init_metric_stores()    
+
     def _flush_buffer(self, store: Store) -> None:
         " Flushed bufffer to CPU, resets cursor"
         store.store.append(store.buffer.flatten(end_dim=1).cpu())
@@ -205,7 +209,7 @@ class ClassificationTracker:
             df: pd.DataFrame = pd.DataFrame(self.metric_store[metric])
             score: float = (df['score'] * df['weight']).sum() / (df['weight'].sum())
             aggregate_metrics[metric] = round(score, 6)
-        aggregate_metrics = {k: v for k,v in aggregate_metrics.items() if math.isnan(v)} 
+        aggregate_metrics = {k: v for k,v in aggregate_metrics.items() if not math.isnan(v)} 
         return aggregate_metrics 
 
     def report(self, 
