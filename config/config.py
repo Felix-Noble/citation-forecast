@@ -7,6 +7,9 @@ top_k = (*top_k, 256, 128, 64, 32, 16, 8, 4)
 n_layers = len(top_k)
 selector_heads = tuple(4 for _ in range(n_layers))
 process_heads = tuple(4 for _ in range(n_layers))
+@dataclass(frozen=True)
+class LossConfig:
+    beta: float = 0.1
 
 @dataclass(frozen=True)
 class ModelConfig:
@@ -27,9 +30,9 @@ class ModelConfig:
 @dataclass(frozen=True)
 class TrainConfig:
     epochs: int = 200
-    batch_size: int = 64
-    opttim_step_interval: int = 50 # n batches until optimizer steps
-    lr: float = 1e-4 
+    batch_size: int = 3
+    grad_accumulation_steps: int = 50 # n batches until optimizer steps
+    lr: float = 1e-2 
     lr_milestones: tuple[int, ...] = (40, 80)
     weight_decay: float = 0.9
     loss_fn: str = 'CrossEntropyLoss'
