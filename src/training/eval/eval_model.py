@@ -28,12 +28,15 @@ def eval_model(
                 mask = mask.to(device, non_blocking=True)
             stream_sync()
 
-            out = model(X, mask)
-            loss = loss_fn(out.squeeze(-1), y)
+            logits, out, sigma = model(X, mask)
+            loss = loss_fn(out.squeeze(-1), sigma, y)
 
-            loss_cpu = loss.detach().item()
+            loss_cpu = loss.detach().cpu().item()
+            sigma_cpu = torch.mean(sigma.detach()).item()
+
             metric_tracker.log_metric('test_loss', loss_cpu, X.shape[0])
-            metric_tracker.process_values((out.detach(), ), ('test_logits', ))
+            metric_tracker.log_metric('test_sigma', sigma_cpu, X.shape[0])
+            metric_tracker.process_values((logits.detach(), ), ('test_logits', ))
             example_progress.update(examples_done, advance=config.train.batch_size)
 
     _ = metric_tracker.calc_metrics(

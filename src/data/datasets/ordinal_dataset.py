@@ -76,7 +76,9 @@ class OrdinalDataset(Dataset[tuple[Tensor, ...]]):
         return x.long()
 
     def _format_y(self, y: Tensor) -> Tensor:
-        return torch.round(y * (self.N_BUCKETS - 1), decimals=0).long()
+        ordinal = torch.round(y * (self.N_BUCKETS - 1), decimals=0).long()
+        one_hot = nn.functional.one_hot(ordinal, num_classes=self.N_BUCKETS)
+        return one_hot 
 
     def __getitem__(self, idx: int) -> tuple[Tensor, ...]:
         x: Tensor = torch.tensor(self.df.loc[idx, self.X], dtype=torch.float32)
