@@ -1,6 +1,5 @@
 from typing import Callable
 
-
 class Registry:
     """ Registry class
         Stores {key, callable} pairs through decoration
@@ -32,14 +31,14 @@ class Registry:
             Checks if key already in map """
 
         assert name not in self.keys, f'{name} already in registry'
-        self._map.update({name.lower(): obj})
+        self._map.update({name: obj})
 
     def register(self, obj_or_name: Callable | str) -> Callable:
         """ Decorator for _register
             Allows both argument and no-argument decoration """
 
         if callable(obj_or_name):
-            self._register(obj_or_name.__name__, obj_or_name)
+            self._register(obj_or_name.__name__.lower(), obj_or_name)
             return obj_or_name
 
         elif isinstance(obj_or_name, str):
