@@ -6,7 +6,7 @@ import torch.nn as nn
 
 class ModelConfig(BaseModel):
     model_name: str
-    pad_token: int
+    pad_token_id: int
     top_k: tuple[int, ...]
     selector_heads: tuple[int, ...]
     process_heads: tuple[int, ...]

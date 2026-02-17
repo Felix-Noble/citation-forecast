@@ -31,7 +31,7 @@ class OrdinalDataset(Dataset[tuple[Tensor, ...]]):
         self.t_start: int = t_start
         self.t_end: int = t_end
         self.MAX_LEN: int = config.model.max_len
-        self.PAD_VALUE: int = config.model.pad_value
+        self.PAD_VALUE: int = config.model.pad_token_id
         self.N_BUCKETS: int = config.model.n_out
         self.PAD: bool = pad
         self.RETURN_MASK: bool = return_mask

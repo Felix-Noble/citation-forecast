@@ -10,9 +10,9 @@ from src.builders import \
         build_loss, \
         build_optimizer
 from src.data import PortionSampler
-from src.training import eval
-from src.training.callbacks import isnan_async
-from src.training.tracking import ClassificationTracker, log_params, log_lrs
+from .eval import eval_model
+from .callbacks import isnan_async
+from .tracking import ClassificationTracker, log_params, log_lrs
 
 import torch
 import os
@@ -70,8 +70,10 @@ def main(
     model = build_model(device=device)
     if run_suffix:
         run_name = config.model.model_name + '-' + str(run_suffix)
+    if dry_run:
+        run_name += '-DRY'
 
-    logger.info(f'Run: "{run_name}" ({config.model.model_name}) | Device: {device}{" | DRY-RUN" if dry_run else ""}')
+    logger.info(f'Run: "{run_name}" (Model: {config.model.model_name}) | Device: {device}{" | DRY-RUN" if dry_run else ""}')
     if compile:
         model.compile(fullgraph=True, mode='default')
 
@@ -168,7 +170,7 @@ def main(
             scheduler.step() 
 
             if epoch % config.train.eval_interval == 0:
-                eval(
+                eval_model(
                     model=model,
                     loss_fn=loss_fn,
                     dataloader=test_dataloader,
@@ -189,7 +191,6 @@ def main(
                 progress_bar=epoch_progress, 
                 epoch=epoch,
             )
-
             mlflow.log_metrics(metrics, step = epoch, synchronous=False)
 
             epoch_progress.update(epochs_done, advance=1)

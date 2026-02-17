@@ -5,7 +5,7 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 
-def eval(
+def eval_model(
     model: nn.Module,
     loss_fn,
     dataloader: DataLoader,
