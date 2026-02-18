@@ -110,11 +110,7 @@ class HAttnBlock(nn.Module):
             self.selective_attn = SelectiveAttn(config, device, dtype)
 
         if self.config.r_layer:
-<<<<<<< HEAD
             self.r_net = nn.GRU(config.embed_dim, config.embed_dim, dropout=config.dropout, device=device, dtype=dtype)
-=======
-            self.r_net = nn.GRU(config.embed_dim, config.embed_dim, dropout=config.dropout, device=device, dtyper=dtype)
->>>>>>> b3a9f3a (fix: GRU device)
 
         self.process_attn = MultiHeadSelfAttn(config.embed_dim, config.hidden_dim, config.hidden_dim, config.process_heads, config.dropout, device, dtype)
 
