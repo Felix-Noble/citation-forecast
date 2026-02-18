@@ -65,7 +65,7 @@ def main(
     assert (run_name or run_suffix), "One of 'run-name' or 'run-suffix' must be specified"
     torch.set_float32_matmul_precision(config.train.mat_mul_precision)
     device: torch.device = torch.device('cuda') if torch.cuda.is_available() and gpu else torch.device('cpu')
-    assert (device == 'cuda' or not gpu), 'No GPU available on this device, use --no-gpu option'
+    assert ((device == torch.device('cuda')) or not gpu), 'No GPU available on this device, use --no-gpu option'
 
     model = build_model(device=device)
     if run_suffix:
