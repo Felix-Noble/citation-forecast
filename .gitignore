@@ -1,8 +1,22 @@
+# Python build artifacts
+*.egg-info/
 __pycache__/
+*.pyc
+
+# Tree-sitter / C-extension binaries
+setup.py
+*.so
+*.pyd
+*.dll
+*.lib
+*.obj
+
+# Other
+build/
+dist/
+README.html
 logs/
 openai/
-testing/
-test.py
 plan.md
 torch_compile_debug/
 weights/
