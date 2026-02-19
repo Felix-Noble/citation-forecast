@@ -36,7 +36,7 @@ class WassersteinCrossEntropyLoss:
         config: Config = config,
             ) ->Tensor:
         """
-        # Wassterstein + Normalised Entropy loss 
+        # Wassterstein + Cross Entropy loss 
         ## Args: 
             distribution: 1D prob distribution (model output softmaxed)
             sigma: model confidence score (interpreted as gaussian sigma)
@@ -48,6 +48,7 @@ class WassersteinCrossEntropyLoss:
 
         target_smoothed = self.smooth_one_hot(target, sigma)
         w_loss = wasserstein_loss(distribution, target_smoothed)
-        c_e_loss = self.ce_loss_fn(logits, target)
+        target_int = torch.argmax(target, dim=-1).long()
+        c_e_loss = self.ce_loss_fn(logits, target_int)
         loss = w_loss + (self.beta * c_e_loss)
         return loss
