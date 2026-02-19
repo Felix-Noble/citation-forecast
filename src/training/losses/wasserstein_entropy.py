@@ -20,7 +20,7 @@ class WassersteinEntropyLoss:
         """ Smooths one hot vector, assumes gaussian noise """
         sigma = sigma.unsqueeze(-1)
         target_indicies = torch.argmax(one_hot, dim=-1).unsqueeze(-1)
-        indicies = torch.arange(one_hot.shape[-1]).float().unsqueeze(0)
+        indicies = torch.arange(one_hot.shape[-1], device=one_hot.device).float().unsqueeze(0)
         dist = Normal(loc=target_indicies, scale=sigma)
         probs = dist.log_prob(indicies).exp()
         out =  probs / probs.sum(dim=-1, keepdim=True)
