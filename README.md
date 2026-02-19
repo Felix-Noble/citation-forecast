@@ -72,13 +72,16 @@ Custom PyTorch Datasets and Samplers, parallelised data -> GPU copy with dedicat
 
 ## 2.2 Tech Stack
 * **Core:** Python (3.13), PyTorch (Deep Learning)
+
 * **MLOps:** MLflow (tracking), Modal (Deployment), Scikit-Learn (metric calculation)
+
 * **Data:** Polars (predicate pushdown loading), Polars (multi-worker serving)
+
 * **Validation:** Pydantic (Type safe model config schemas)
+
 * **Tooling:** Typer (CLI), Rich (Console logging)
 
 # 3. Quick start
-
 * Clone the repository and setup your environment.
 ```bash
 git clone https://github.com/Felix-Noble/citation-forecast.git
