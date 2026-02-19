@@ -29,7 +29,7 @@ def eval_model(
             stream_sync()
 
             logits, out, sigma = model(X, mask)
-            loss = loss_fn(out.squeeze(-1), sigma, y)
+            loss = loss_fn(logits, out, sigma, y)
 
             loss_cpu = loss.detach().cpu().item()
             sigma_cpu = torch.mean(sigma.detach()).item()
