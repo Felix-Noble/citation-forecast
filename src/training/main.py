@@ -143,7 +143,7 @@ def main(
                 stream_sync()
 
                 logits, out, sigma = model(X, mask)
-                loss = loss_fn(out, sigma, y)
+                loss = loss_fn(logits, out, sigma, y)
                 loss_cpu = loss.detach().item()
                 sigma_cpu = torch.mean(sigma.detach()).item() 
 

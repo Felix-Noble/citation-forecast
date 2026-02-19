@@ -1,20 +1,21 @@
 from ._registry import loss_registry
 from .wasserstein import wasserstein_loss
-from .entropy import norm_entropy_loss
+from .cross_entropy import CrossEntropyLoss
 from config import Config, config
 import torch
 from torch.distributions.normal import Normal
 from torch import Tensor, tensor, cuda
 
-@loss_registry('WassersteinEntropyLoss')
-class WassersteinEntropyLoss:
+@loss_registry('WassersteinCrossEntropyLoss')
+class WassersteinCrossEntropyLoss:
     def __init__(
             self,
             config: Config = config,
             device: torch.device = torch.device('cuda') if cuda.is_available() else torch.device('cpu'),
             ):
         self.beta = tensor(config.train.loss.beta, device=device)
-    
+        self.ce_loss_fn = CrossEntropyLoss() 
+
     @staticmethod
     def smooth_one_hot(one_hot: Tensor, sigma: Tensor) -> Tensor:
         """ Smooths one hot vector, assumes gaussian noise """
@@ -28,6 +29,7 @@ class WassersteinEntropyLoss:
 
     def __call__(
         self,
+        logits: Tensor,
         distribution: Tensor,
         sigma: Tensor,
         target: Tensor,
@@ -39,13 +41,13 @@ class WassersteinEntropyLoss:
             distribution: 1D prob distribution (model output softmaxed)
             sigma: model confidence score (interpreted as gaussian sigma)
             target: one hot vector for target class
-            beta: multiplies entropy penalty (expected at config.train.loss.beta)
+            beta: multiplies cross entropy penalty (expected at config.train.loss.beta)
         ## Out:
-            loss: wassterstein + weighted norm entropy loss
+            loss: wassterstein + weighted cross entropy loss
        """ 
 
         target_smoothed = self.smooth_one_hot(target, sigma)
         w_loss = wasserstein_loss(distribution, target_smoothed)
-        e_loss = norm_entropy_loss(distribution)
-        loss = w_loss + (self.beta * e_loss)
+        c_e_loss = self.ce_loss_fn(logits, target)
+        loss = w_loss + (self.beta * c_e_loss)
         return loss
