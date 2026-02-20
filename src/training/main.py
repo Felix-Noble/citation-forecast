@@ -124,7 +124,7 @@ def main(
     logger.info(f'Mlflow connection established at {env.TRACKING_URI}') 
     mlflow.set_experiment(env.EXPERIMENT)
     with mlflow.start_run(run_name=run_name):
-
+        mlflow.log_artifact('config/config.py')
         mlf_run = mlflow.active_run()
         log_params(config.train.dataset, scheduler)
 
