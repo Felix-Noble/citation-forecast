@@ -14,6 +14,7 @@ class WassersteinCrossEntropyLoss:
             device: torch.device = torch.device('cuda') if cuda.is_available() else torch.device('cpu'),
             ):
         self.beta = tensor(config.train.loss.beta, device=device)
+        self.gamma = tensor(config.train.loss.gamma, device=device)
         self.ce_loss_fn = CrossEntropyLoss() 
 
     @staticmethod
@@ -43,12 +44,12 @@ class WassersteinCrossEntropyLoss:
             target: one hot vector for target class
             beta: multiplies cross entropy penalty (expected at config.train.loss.beta)
         ## Out:
-            loss: wassterstein + weighted cross entropy loss
+            loss: cross entropy + wasserstein dist to weighted smooth distribution 
        """ 
 
-        target_smoothed = self.smooth_one_hot(target, sigma)
+        target_smoothed = self.smooth_one_hot(target, sigma * self.gamma)
         w_loss = wasserstein_loss(distribution, target_smoothed)
         target_int = torch.argmax(target, dim=-1).long()
         c_e_loss = self.ce_loss_fn(logits, target_int)
-        loss = w_loss + (self.beta * c_e_loss)
+        loss = c_e_loss + (self.beta * w_loss)
         return loss
