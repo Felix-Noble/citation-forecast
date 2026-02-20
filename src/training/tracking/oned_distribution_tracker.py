@@ -6,7 +6,7 @@ from dataclasses import dataclass
 import pandas as pd
 from rich.table import Table
 from rich.console import Console
-from sklearn.metrics import roc_auc_score, balanced_accuracy_score, mean_absolute_error # pyright: ignore[reportUnknownVariableType, reportMissingTypeStubs] 
+from sklearn.metrics import roc_auc_score, precision_score, recall_score, balanced_accuracy_score, mean_absolute_error # pyright: ignore[reportUnknownVariableType, reportMissingTypeStubs] 
 import math
 import torch
 from pathlib import Path
@@ -220,6 +220,18 @@ class OneDDistributionTracker:
         try:
             balanced_accuracy = balanced_accuracy_score(y_true, preds)
             self.log_metric(f'{prefix}_balanced_accuracy', balanced_accuracy, preds.shape[0]) # pyright: ignore[reportArgumentType]
+        except Exception as e:
+            logger.error(e)
+
+        try:
+            precision = precision_score(y_true, preds, average='weighted')
+            self.log_metric(f'{prefix}_balanced_precision', precision, preds.shape[0]) # pyright: ignore[reportArgumentType]
+        except Exception as e:
+            logger.error(e)
+
+        try:
+            recall = recall_score(y_true, preds, average='weighted')
+            self.log_metric(f'{prefix}_balanced_recall', recall, preds.shape[0]) # pyright: ignore[reportArgumentType]
         except Exception as e:
             logger.error(e)
 
