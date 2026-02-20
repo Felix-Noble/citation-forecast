@@ -11,7 +11,8 @@ r_layers = tuple(False if i not in (3,10) else True for i in range(n_layers))
 
 @dataclass(frozen=True)
 class LossConfig:
-    beta: float = 1
+    beta: float = 1.0
+    gamma: float = 3
 
 @dataclass(frozen=True)
 class ModelConfig:
@@ -39,7 +40,7 @@ class TrainConfig:
     lr_milestones: tuple[int, ...] = (40, 80)
     weight_decay: float = 0.9
     optimizer: str = 'AdamW'
-    loss_fn: str = 'WassersteinEntropyLoss'
+    loss_fn: str = 'WassersteinCrossEntropyLoss'
     loss: LossConfig = LossConfig()
     eval_interval: int = 5
     checkpoint_interval: int = 10

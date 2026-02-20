@@ -221,6 +221,6 @@ class H_R_Smooth(nn.Module):
         logits = self.head(out)
         out, sigma = logits[:, :-1], logits[:, -1]
         probs = torch.softmax(out, dim=-1)
-        sigma = nn.functional.softplus(sigma)
+        sigma = nn.functional.sigmoid(sigma)
         return logits, probs, sigma
 
