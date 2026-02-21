@@ -75,7 +75,7 @@ def main(
 
     logger.info(f'Run: "{run_name}" (Model: {config.model.model_name}) | Device: {device}{" | DRY-RUN" if dry_run else ""}')
     if compile:
-        model.compile(fullgraph=True, mode='default')
+        model.compile(fullgraph=False, mode='default')
 
     loss_fn = build_loss()
     optimizer = build_optimizer(
