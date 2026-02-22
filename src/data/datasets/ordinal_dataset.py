@@ -46,8 +46,7 @@ class OrdinalDataset(Dataset[tuple[Tensor, ...]]):
         self.lf: pl.LazyFrame = (
                 pl.scan_parquet(data_path)
                 .select(columns)
-                .filter((pl.col('publication_date_int') >= self.t_start) |
-                        pl.col('publication_date_int') < self.t_end)
+                .filter((pl.col('publication_date_int') >= self.t_start) & (pl.col('publication_date_int') < self.t_end))
                 ) 
         if dry_run:
             self.lf = self.lf.slice(0, (config.train.batch_size * 3) - 1)
