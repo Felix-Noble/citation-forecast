@@ -176,25 +176,30 @@ class OneDDistributionTracker:
                 y_store_name: str,
                 prefix: str = "",
                 ) -> None:
-        head_out = self._gather_store(store_name=logit_store_name)
-        
-        logits, sigma = head_out[:, :-1], head_out[:, -1]
-        sigma = torch.nn.functional.softplus(sigma)
+        try:
+            head_out = self._gather_store(store_name=logit_store_name)
+            
+            logits, sigma = head_out[:, :-1], head_out[:, -1]
+            sigma = torch.nn.functional.softplus(sigma)
 
-        probs = torch.softmax(logits, dim=-1)
+            probs = torch.softmax(logits, dim=-1)
 
-        preds = torch.argmax(
-            probs,
-            dim=-1,
-        ).unsqueeze(-1)
+            preds = torch.argmax(
+                probs,
+                dim=-1,
+            ).unsqueeze(-1)
 
-        y_true_one_hot = self._gather_store(store_name=y_store_name)
+            y_true_one_hot = self._gather_store(store_name=y_store_name)
 
-        y_true_smoothed = WassersteinEntropyLoss.smooth_one_hot(y_true_one_hot, sigma)
-        y_true = torch.argmax(
-                y_true_one_hot,
-                dim=1
-                ) 
+            y_true_smoothed = WassersteinEntropyLoss.smooth_one_hot(y_true_one_hot, sigma)
+            y_true = torch.argmax(
+                    y_true_one_hot,
+                    dim=1
+                    ) 
+        except Exception as e:
+            logger.error(e)
+            return
+
         if preds.size(0) != y_true.size(0):
             logger.error(f'Different n. examples in logits and y_true: logits shape: {probs.shape}, y_true shape:{y_true.shape}')
             return
