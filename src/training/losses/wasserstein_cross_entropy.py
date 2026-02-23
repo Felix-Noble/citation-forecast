@@ -31,10 +31,11 @@ class WassersteinCrossEntropyLoss:
     def __call__(
         self,
         logits: Tensor,
-        distribution: Tensor,
+        probs: Tensor,
         sigma: Tensor,
         target: Tensor,
         config: Config = config,
+        **kwargs,
             ) ->Tensor:
         """
         # Wassterstein + Cross Entropy loss 
@@ -48,7 +49,7 @@ class WassersteinCrossEntropyLoss:
        """ 
 
         target_smoothed = self.smooth_one_hot(target, sigma * self.gamma)
-        w_loss = wasserstein_loss(distribution, target_smoothed)
+        w_loss = wasserstein_loss(probs, target_smoothed)
         target_int = torch.argmax(target, dim=-1).long()
         c_e_loss = self.ce_loss_fn(logits, target_int)
         loss = c_e_loss + (self.beta * w_loss)

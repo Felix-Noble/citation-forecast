@@ -142,8 +142,8 @@ def main(
                     mask = mask.to(device, non_blocking=True)
                 stream_sync()
 
-                logits, out, sigma = model(X, mask)
-                loss = loss_fn(logits, out, sigma, y)
+                logits, probs, sigma = model(X, mask)
+                loss = loss_fn(logits=logits, probs=probs, sigma=sigma, target=y)
                 loss_cpu = loss.detach().item()
                 sigma_cpu = torch.mean(sigma.detach()).item() 
 
