@@ -14,6 +14,7 @@ class WassersteinEntropyLoss:
             device: torch.device = torch.device('cuda') if cuda.is_available() else torch.device('cpu'),
             ):
         self.beta = tensor(config.train.loss.beta, device=device)
+        self.gamma = tensor(config.train.loss.gamma, device=device)
     
     @staticmethod
     def smooth_one_hot(one_hot: Tensor, sigma: Tensor) -> Tensor:
