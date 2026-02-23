@@ -164,7 +164,7 @@ class HAttnBlock(nn.Module):
         return out, mask
 
 @model_registry
-class H_R_Smooth(nn.Module):
+class H_R_Attn(nn.Module):
     """ Heirarchical recurrent attention with target smoothing"""
     config_schema = ModelConfig
     def __init__(
