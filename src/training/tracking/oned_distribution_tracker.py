@@ -217,7 +217,7 @@ class OneDDistributionTracker:
             logger.error(e)
 
         try:
-            wasserstein_dist = wasserstein_loss(preds, y_true_smoothed)
+            wasserstein_dist = wasserstein_loss(probs, y_true_smoothed)
             self.log_metric(f'{prefix}_wasserstein_distance', wasserstein_dist.item(), preds.shape[0])
         except Exception as e:
             logger.error(e)
