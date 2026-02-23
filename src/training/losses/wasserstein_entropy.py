@@ -40,7 +40,7 @@ class WassersteinEntropyLoss:
             distribution: 1D prob distribution (model output softmaxed)
             sigma: model confidence score (interpreted as gaussian sigma)
             target: one hot vector for target class
-            beta: multiplies entropy penalty (expected at config.train.loss.beta)
+            beta: proportional importance of wasserstein > entropy (expected at config.train.loss.beta)
         ## Out:
             loss: wassterstein + weighted norm entropy loss
        """ 
@@ -48,5 +48,5 @@ class WassersteinEntropyLoss:
         w_loss = wasserstein_loss(probs, target_smoothed)
         e_loss = norm_entropy_loss(probs)
 
-        loss = w_loss + (self.beta * e_loss)
+        loss = ((1 - self.beta) * e_loss) + (self.beta * w_loss)
         return loss

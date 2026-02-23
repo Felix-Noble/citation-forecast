@@ -43,7 +43,7 @@ class WassersteinCrossEntropyLoss:
             distribution: 1D prob distribution (model output softmaxed)
             sigma: model confidence score (interpreted as gaussian sigma)
             target: one hot vector for target class
-            beta: multiplies cross entropy penalty (expected at config.train.loss.beta)
+            beta: proportional importance of wasserstein > entropy (expected at config.train.loss.beta)
         ## Out:
             loss: cross entropy + wasserstein dist to weighted smooth distribution 
        """ 
@@ -52,5 +52,5 @@ class WassersteinCrossEntropyLoss:
         w_loss = wasserstein_loss(probs, target_smoothed)
         target_int = torch.argmax(target, dim=-1).long()
         c_e_loss = self.ce_loss_fn(logits, target_int)
-        loss = c_e_loss + (self.beta * w_loss)
+        loss = ((1 - self.beta) * e_loss) + (self.beta * w_loss)
         return loss
