@@ -28,10 +28,11 @@ class WassersteinEntropyLoss:
 
     def __call__(
         self,
-        distribution: Tensor,
+        probs: Tensor,
         sigma: Tensor,
         target: Tensor,
         config: Config = config,
+        **kwargs
             ) ->Tensor:
         """
         # Wassterstein + Normalised Entropy loss 
@@ -43,9 +44,9 @@ class WassersteinEntropyLoss:
         ## Out:
             loss: wassterstein + weighted norm entropy loss
        """ 
+        target_smoothed = self.smooth_one_hot(target, sigma * self.gamma)
+        w_loss = wasserstein_loss(probs, target_smoothed)
+        e_loss = norm_entropy_loss(probs)
 
-        target_smoothed = self.smooth_one_hot(target, sigma)
-        w_loss = wasserstein_loss(distribution, target_smoothed)
-        e_loss = norm_entropy_loss(distribution)
         loss = w_loss + (self.beta * e_loss)
         return loss
