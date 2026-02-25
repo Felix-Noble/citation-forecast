@@ -52,5 +52,5 @@ class WassersteinCrossEntropyLoss:
         w_loss = wasserstein_loss(probs, target_smoothed)
         target_int = torch.argmax(target, dim=-1).long()
         c_e_loss = self.ce_loss_fn(logits, target_int)
-        loss = ((1 - self.beta) * e_loss) + (self.beta * w_loss)
+        loss = ((1 - self.beta) * c_e_loss) + (self.beta * w_loss)
         return loss
