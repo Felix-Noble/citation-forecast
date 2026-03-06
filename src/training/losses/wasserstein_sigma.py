@@ -48,5 +48,5 @@ class WassersteinSigmaLoss:
         target_smoothed = self.smooth_one_hot(target, sigma * self.gamma)
         w_loss = wasserstein_loss(probs, target_smoothed)
 
-        loss = ((1 - self.beta) * sigma) + (self.beta * w_loss)
+        loss = ((1 - self.beta) * torch.mean(sigma)) + (self.beta * w_loss)
         return loss
