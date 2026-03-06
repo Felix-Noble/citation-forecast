@@ -20,7 +20,88 @@ management and validation inference. Alongside this, I am actively
 experimenting with variations of a Wasserstein-entropy-based loss function
 to better handle the entropy of ordinal classifications.
 
-# 1. Project Structure 
+# 1. Tech Stack & Key Features
+## 1.1 Key Features
+* **Modular Trainer Architecture:**
+Decoupled training loops using a Registry (utils) pattern for easy swapping of losses, optimizers, and models.
+
+* **Ordinal Regression Focus:** 
+Specialized data handling for citation counts, treating citation percentile buckets as ordinal classes rather than unordered classes or pure regression
+
+* **Production-Ready Inference:** 
+Integrated with Modal for serverless GPU inference and MLflow for experiment tracking.
+
+* **Data Pipeline:** 
+Custom PyTorch Datasets and Samplers, parallelised data -> GPU copy with dedicated stream
+
+## 1.2 Tech Stack
+* **Core:** Python (3.13), PyTorch (Deep Learning)
+
+* **MLOps:** MLflow (tracking), Modal (Deployment), Scikit-Learn (metric calculation)
+
+* **Data:** Polars (predicate pushdown loading), Polars (multi-worker serving)
+
+* **Validation:** Pydantic (Type safe model config schemas)
+
+* **Tooling:** Typer (CLI), Rich (Console logging)
+
+# 2. Road-map
+## v0.2
+<details>
+<summary><b>v0.2.0 Data pre-processing CLI (In Progress)</b></summary>
+
+- Standardise data pre-processing notebook into separate functions.
+
+- Orchestrate pre-processing functions in main loop.
+
+- CLI control via Typer app, functions induced/skipped via option flags.
+</details>
+
+<details>
+<summary><b>v0.2.1 Dataloader flexibility (In Progress)</b></summary>
+
+- Support concatenation of multiple string/token columns when serving examples from dataloader.
+
+- Add option for string tokenisation on data load/serving, transformers tokeniser selected via config
+
+</details>
+
+## v0.3
+<details>
+<summary><b>v0.3.0 Refactor Config (Planned)</b></summary>
+
+- Move code-as-config module from root to src
+
+- Seperate train/data/env configs into distinct files
+
+- Add dedicated loss/optimisation config for lr schedule milestones etc.
+
+- Allow config value overrides from CLI via option flags
+</details>
+
+## v0.4
+<details>
+<summary><b>v0.4.0 Modernise CLI access (Planned)</b></summary>
+
+- Refactor src module imports as relative to /src
+
+- Standardise cli access via pyproject.toml build parameters
+
+</details>
+
+## v1.0
+<details>
+<summary><b>v1.0.0 Full experiment suite</b></summary
+
+- MLflow run management with automatic name creation
+
+- CLI driven checkpoint loading with MLflow child run assignment 
+
+- Automated Hyperperameter search logic, with MLflow parent/child assignment
+
+</details>
+
+# 3. Project Structure  
 ```text
 citation-forecast/
 ├── config/
@@ -36,6 +117,7 @@ citation-forecast/
 │           ├── tokeniser/      # tokeniser (transformers)
 │           └── weights/        # model checkpoint (.pt)
 ├── src/
+│   ├── apps/                   # typer CLI argument parsing
 │   ├── builders/               # safety checks, registry access, and instance creations to serve assets into main loops
 │   └── training/
 │       ├── eval/               # evaluation loops
@@ -56,32 +138,7 @@ citation-forecast/
 └── app.py                      # CLI entry point (./app.py)
 ```
 
-# 2. Tech Stack & Key Features
-## 2.1 Key Features
-* **Modular Trainer Architecture:**
-Decoupled training loops using a Registry (utils) pattern for easy swapping of losses, optimizers, and models.
-
-* **Ordinal Regression Focus:** 
-Specialized data handling for citation counts, treating citation percentile buckets as ordinal classes rather than unordered classes or pure regression
-
-* **Production-Ready Inference:** 
-Integrated with Modal for serverless GPU inference and MLflow for experiment tracking.
-
-* **Data Pipeline:** 
-Custom PyTorch Datasets and Samplers, parallelised data -> GPU copy with dedicated stream
-
-## 2.2 Tech Stack
-* **Core:** Python (3.13), PyTorch (Deep Learning)
-
-* **MLOps:** MLflow (tracking), Modal (Deployment), Scikit-Learn (metric calculation)
-
-* **Data:** Polars (predicate pushdown loading), Polars (multi-worker serving)
-
-* **Validation:** Pydantic (Type safe model config schemas)
-
-* **Tooling:** Typer (CLI), Rich (Console logging)
-
-# 3. Quick start
+# 4. Quick start
 * Clone the repository and setup your environment.
 ```bash
 git clone https://github.com/Felix-Noble/citation-forecast.git
