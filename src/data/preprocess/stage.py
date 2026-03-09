@@ -4,22 +4,23 @@ import gc
 # pyright: basic
 # pyright: reportAttributeAccessIssue=false, reportPrivateImportUsage=false
 
-os.environ['POLARS_MAX_THREADS'] = '32'
+os.environ['POLARS_MAX_THREADS'] = '16'
 
 def main(
     raw: str,
     out: str,
     start_date: int,
     end_date: int,
-    field_id: int,
+    field_id: int | None=None,
     drop_na_cols: list[str] = [],
     num_files:int = 64,
 ) -> None:
     
     df = pl.scan_parquet(raw, extra_columns='ignore')
-    #df = df.filter((pl.col('publication_date_int') >= start_date) & (pl.col('publication_date_int') < end_date))
-    #df = df.filter(pl.col('field_id') == field_id)
-    #df = df.drop_nulls(subset=drop_na_cols)
+    df = df.filter((pl.col('publication_date_int') >= start_date) & (pl.col('publication_date_int') < end_date))
+    if field_id is not None:
+        df = df.filter(pl.col('field_id') == field_id)
+    df = df.drop_nulls(subset=drop_na_cols)
 
     print('writing parquet')
     i = 0
@@ -30,15 +31,14 @@ def main(
         len = df_part.select(pl.len()).collect(engine='streaming').item()
         if len < 1:
             break
+        print(f'Writing part{i} | n={len}')
         df_part.sink_parquet(
             f'{out}/part{i}.parquet',
             statistics=True,
             compression='zstd',
             compression_level=8,
         )
-        print(f'finished writing part{i}')
         i += 1
-    print('finished')
 
 if __name__ == '__main__':
     import os
@@ -46,11 +46,11 @@ if __name__ == '__main__':
     sys.path.append('/home/fnoble/projects/citation-forecast/')
     from config import env
     import datetime
-    start_date = datetime.date(1960, 1, 1).toordinal()
-    end_date = datetime.date(2026, 1, 1).toordinal()
-    field_id = 32
+    start_date = datetime.date(2015, 1, 1).toordinal()
+    end_date = datetime.date(2027, 1, 1).toordinal()
+    field_id = None
     
-    field_name = 'all'
+    field_name = 'all_15'
     os.makedirs(env.STAGED_LOC / field_name, exist_ok=True)
 
     print('starting main body')
@@ -62,3 +62,4 @@ if __name__ == '__main__':
         field_id,
         ['id', 'title'],
     )
+    print('finished')
