@@ -14,18 +14,17 @@ from pathlib import Path
 os.environ['POLARS_MAX_THREADS'] = '16'
 
 def main(
-    data_path: str,
-    tokenizer_path: str,
-    columns: list[str],
-    dry_run: bool = False,
+        lf: pl.LazyFrame,
+        tokeniser_path: str,
+        columns: list[str],
 ):
-    tokenizer = AutoTokenizer.from_pretrained(
-        tokenizer_path,
+    tokeniser = AutoTokenizer.from_pretrained(
+        tokeniser_path,
         use_fast=True,
     )
-    def tokenize_partition(text: pl.Series):
-        tokens = tokenizer(
-            (tokenizer.bos_token + text + tokenizer.eos_token).to_list(), 
+    def tokenise_partition(text: pl.Series):
+        tokens = tokeniser(
+            (tokeniser.bos_token + text + tokeniser.eos_token).to_list(), 
             return_tensors=None,
             truncation=False,
             padding=False,
@@ -37,47 +36,15 @@ def main(
             dtype=pl.List(pl.Int32),
         )
 
-    if not os.path.exists(f'./{tokenizer}'):
-        tokenizer.save_pretrained(tokenizer_path)
-    lf = pl.scan_parquet(data_path)
-
-    if dry_run:
-        lf = lf.slice(0,500)
+    # TODO make this relative to project package root
+    if not os.path.exists(f'./{tokeniser}'):
+        tokeniser.save_pretrained(tokeniser_path)
 
     for col in columns:
         lf = lf.with_columns(
             pl.col(col)
             .fill_null('')
-            .map_batches(tokenize_partition)
+            .map_batches(tokenise_partition)
             .alias(f'{col}_tokens')
         )
-
-    if not dry_run: 
-        i = 0
-        n = 1_000_000
-        while True:
-            lf_slice = lf.slice(i*n, n)
-            len = lf_slice.select(pl.len()).collect(engine='streaming').item()
-            if len < 1:
-                break
-            print(f'writing part {i} | n={len}')
-            lf_slice.sink_parquet(
-                f'{data_path}_tokenised/part{i}.parquet',
-                statistics=True,
-                compression='zstd',
-                compression_level=4
-            ) 
-            i += 1
-    else:
-        len = lf.select(pl.len()).collect()
-        print(f'{len} rows tokenised')
-        print(lf.columns)
-        print(lf.collect())
-
-if __name__ == '__main__':
-    main(
-        data_path='/home/fnoble/data/staged/all_clean',
-        columns=['title', 'abstract'],
-        tokenizer_path='openai/gpt-oss-120b',
-        dry_run=False,
-    )
+    return lf

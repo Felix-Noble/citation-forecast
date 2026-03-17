@@ -61,71 +61,28 @@ class Filter:
     remove = []
 
 def main(
-    origin: str,
-    destination: str,
-    field_id: int,
+        lf: pl.LazyFrame,
+        columns: list[str],
+        min_lens: dict[str, int] = {'abstract': 300}
     ):
-    if os.path.exists(destination):
-        print(f'clear path before saving - {destination}')
-        quit()
-    os.makedirs(destination, exist_ok=True)
-    lf = pl.scan_parquet(origin)
-    
-    # type filters 
-    lf = lf.filter((pl.col('language') == 'en') & (pl.col('type') == 'article'))
-    lf = lf.filter(pl.col('field_id') == field_id)
-
-    # std filtering
-    lf = lf.with_columns(
-        pl.col('abstract').str.len_chars().alias('abstract_len')
-    )
-    stats = lf.select('abstract_len').collect(engine='streaming')
-    mean: float = stats['abstract_len'].mean()
-    std: float = stats['abstract_len'].std()
-    high: float = mean + (std * 3)  
-    low: float = max(mean - (std * 3), 300)
-    lf = lf.filter(
-        (pl.col('abstract_len') > low) & pl.col('abstract_len') < high
-    )
-    lf = lf.drop('abstract_len')
-
-    lf = lf.with_columns(
-        pl.col('title').str.len_chars().alias('title_len')
-    )
-    stats = lf.select('title_len').collect(engine='streaming')
-    mean: float = stats['title_len'].mean()
-    std: float = stats['title_len'].std()
-    high: float = mean + (std * 3)  
-    low: float = max(mean - (std * 3), 10)
-    lf = lf.filter(
-        (pl.col('title_len') > low) & pl.col('title_len') < high
-    )
-    lf = lf.drop('title_len')
+     
+    for col in columns:
+        # std filtering
+        lf = lf.with_columns(
+            pl.col('abstract').str.len_chars().alias('abstract_len')
+        )
+        stats = lf.select(f'{col}_len').collect(engine='streaming')
+        mean: float = stats[f'{col}_len'].mean()
+        std: float = stats[f'{col}_len'].std()
+        high: float = mean + (std * 3)  
+        low: float = max(mean - (std * 3), min_lens.get(col, 0))
+        lf = lf.filter(
+            (pl.col(f'{col}_len') > low) & pl.col(f'{col}_len') < high
+        )
+        lf = lf.drop(f'{col}_len')
    
-    # content filtering
-    lf = lf.filter(~pl.col('abstract').str.contains_any(Filter.exclude))
-    lf = lf.filter(pl.col('abstract').str.ends_with('.'))
-    lf = lf.filter(~pl.col('title').str.contains_any(Filter.exclude))
+        # content filtering
+        lf = lf.filter(~pl.col(col).str.contains_any(Filter.exclude))
+        lf = lf.filter(pl.col(col).str.ends_with('.'))
     
-    i = 0
-    n = 1_000_000
-    while True:
-        lf_slice = lf.slice(i*n, (i+1)*n)
-        len = lf_slice.select(pl.len()).collect(engine='streaming').item()
-        if len < 1:
-            break
-        print(f'writing part {i}, len={len}')
-        lf_slice.sink_parquet(
-            f'{destination}/part{i}.parquet',
-            statistics=True,
-            compression='zstd',
-            compression_level=4
-        ) 
-        i += 1 
-
-if __name__ == '__main__':
-    main(
-        origin = '/home/fnoble/data/staged/all',
-        destination = '/home/fnoble/data/staged/psychology_2',
-        field_id = 32,
-    )
+    return lf
