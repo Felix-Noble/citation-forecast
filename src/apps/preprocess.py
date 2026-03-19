@@ -174,19 +174,27 @@ def main(
         lf = lf.filter((pl.col('publication_date_int') < end_date.toordinal()))
     if field_id:
         lf = lf.filter(pl.col('field_id').is_in(field_id))
+    else:
+        logger.warning('No field id filter set')
     if drop_na_cols:
         lf = lf.drop_nulls(subset=drop_na_cols)
+    else:
+        logger.warning('No columns set to drop nulls')
     if languages:
         lf = lf.filter(pl.col('language').is_in(languages))
+    else:
+        logger.warning('No Language filters set')
     if types:
         lf = lf.filter(pl.col('type').is_in(types))
+    else:
+        logger.warning('No document type filters set')
     if clean:
         lf = clean_step(
                 lf=lf,
                 columns=clean_cols
                         )
     if embed_model:
-        raise ValueError('Feature is a work in progress, leave out for now')
+        logger.warning('Embed feature is a work in progress, leave out for now')
 
     # finish previous steps before continuing
     progress = progress_bar.add_task('Clean/Filter', total=n_rows)
