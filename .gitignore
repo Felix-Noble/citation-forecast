@@ -12,6 +12,7 @@ setup.py
 *.obj
 
 # Other
+temp/
 build/
 dist/
 README.html

@@ -1,12 +1,53 @@
+import os
+os.environ['TOKENIZERS_PARALLELISM'] = 'false'
+os.environ["POLARS_MAX_THREADS"] = "16"
+from config import config
 from src.data.preprocess import clean_step, tokenise_step
-from rich.progress import Progress, TextColumn, BarColumn, TimeElapsedColumn, TimeRemainingColumn
+from src.utils.logging import setup_logger
+
+from rich.progress import Progress, TaskID, TextColumn, BarColumn, TimeElapsedColumn, TimeRemainingColumn
 from datetime import datetime
 import typer 
-import os
+import shutil
 from pathlib import Path
 import polars as pl
+from logging import getLogger
 
+logger = getLogger(Path(__file__).stem)
+_ = setup_logger(logger, config.logging)
 app = typer.Typer(pretty_exceptions_enable=False)
+
+def value_alternator(n: int = 2):
+    i = 0 
+    while True:
+        yield i
+        i += 1
+        if i >= n:
+            i = 0
+
+def export_parquet(
+    lf: pl.LazyFrame,
+    destination: str | Path,
+    rows_per_file: int,
+    progress_bar: Progress | None=None,
+    progress_task: TaskID | None=None,
+    compression_level: int = 4,
+                    ) -> None:
+    i = 0
+    while True:
+        lf_slice = lf.slice(i*rows_per_file, rows_per_file)
+        rows = lf_slice.select(pl.len()).collect(engine='streaming').item()
+        if rows < 1:
+            break
+        lf_slice.sink_parquet(
+            f'{destination}/part{i}.parquet',
+            statistics=True,
+            compression='zstd',
+            compression_level=compression_level
+        ) 
+        i += 1 
+        if progress_bar is not None and progress_task is not None:
+            progress_bar.update(progress_task, advance=rows)
 
 @app.callback(invoke_without_command=True)
 def main(
@@ -50,7 +91,7 @@ def main(
         help = 'Data columsn to tokenise, must be str, pass multiple flags for multiple cols'
             ),
     rows_per_file: int = typer.Option(
-        1_000_000,
+        300_000,
         '--rows-per-file',
         help = 'Max rows per file'
         ),
@@ -94,11 +135,6 @@ def main(
             '--dry-run',
             help = 'Test/Dry run with 500 sample slice of data',
             ),
-    calc_total_rows: bool = typer.Option(
-            False,
-            '--calc-total-rows',
-            help = 'Calculate total rows for progress bar, requires whole frame to memory'
-            )
     ) -> None:
     # Safety Checks
     assert (clean and clean_cols) or (not clean and not clean_cols), 'Provide columns to be cleaned'
@@ -110,7 +146,10 @@ def main(
         destination = Path(origin).parent / f'{str(Path(origin).stem)}_preprocessed'
     else:
         destination = Path(origin).parent / name
-    os.makedirs(destination)
+    if os.path.exists(destination):
+        assert (len(os.listdir(destination)) < 1), "Ensure destination is empty"
+    n_rows: int = pl.scan_parquet(origin).select(pl.len()).collect(engine='streaming').item()
+    alternator = value_alternator()
 
     progress_bar = Progress(
         TextColumn('[bold blue] {task.description}', justify='left'),
@@ -146,35 +185,55 @@ def main(
                 lf=lf,
                 columns=clean_cols
                         )
-    if tokeniser:
-        lf = tokenise_step(
-                lf=lf,
-                tokeniser_path=tokeniser,
-                columns=tokenise_cols,
-                           )
     if embed_model:
         raise ValueError('Feature is a work in progress, leave out for now')
 
+    # finish previous steps before continuing
+    progress = progress_bar.add_task('Clean/Filter', total=n_rows)
+    temp_loc = f'./temp{next(alternator)}'
+    os.makedirs(temp_loc)
+    export_parquet(
+        lf=lf,
+        destination=temp_loc,
+        rows_per_file=rows_per_file,
+        progress_bar=progress_bar,
+        progress_task=progress,
+        compression_level=4,
+    )
+    lf = pl.scan_parquet(temp_loc)
+    n_rows: int = pl.scan_parquet(temp_loc).select(pl.len()).collect(engine='streaming').item()
     # Export 
     if dry_run:
         print(lf.collect())
-    n_rows = -1
-    if calc_total_rows:
-        n_rows: int = lf.select(pl.len()).collect(engine='streaming').item()
     progress = progress_bar.add_task('Rows', total=n_rows)
+    os.makedirs(destination, exist_ok=True)
+    if tokeniser:
+        for file in Path(temp_loc).glob('*.par*'):
+            lf_file = pl.scan_parquet(file)
+            rows = lf_file.select(pl.len()).collect().item()
+            lf_file = tokenise_step(
+                lf=lf_file,
+                tokeniser_path=tokeniser,
+                columns=tokenise_cols,
+            )
+            lf_file.sink_parquet(
+                destination / f'{file.stem}{file.suffix}',
+                compression='zstd',
+                compression_level=compression_level,
+            )
+            progress_bar.update(progress, advance=rows)
 
-    i = 0
-    while True:
-        lf_slice = lf.slice(i*rows_per_file, (i+1)*rows_per_file)
-        len: int = lf_slice.select(pl.len()).collect(engine='streaming').item()
-        if len < 1:
-            break
-        lf_slice.sink_parquet(
-            f'{destination}/part{i}.parquet',
-            statistics=True,
-            compression='zstd',
-            compression_level=compression_level
-        ) 
-        i += 1 
-        progress_bar.update(progress, advance=len)
-  
+    else:
+        export_parquet(
+            lf=lf,
+            destination=destination,
+            rows_per_file=rows_per_file,
+            progress_bar=progress_bar,
+            progress_task=progress,
+            compression_level=compression_level,
+        )
+
+    for i in range(2):
+        if os.path.exists(f'./temp{i}'):
+            shutil.rmtree(f'./temp{i}')
+
