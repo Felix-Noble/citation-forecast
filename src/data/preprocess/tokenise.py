@@ -10,21 +10,35 @@ from logging import getLogger
 from pathlib import Path
 #logger = getLogger(Path(__file__).stem)
 #_ = setup_logger(logger, config.logging)
-
-os.environ['POLARS_MAX_THREADS'] = '16'
+tokeniser = None
 
 def main(
         lf: pl.LazyFrame,
         tokeniser_path: str,
         columns: list[str],
-):
-    tokeniser = AutoTokenizer.from_pretrained(
-        tokeniser_path,
-        use_fast=True,
-    )
+        ):
+
+    # TODO make this relative to project package root
+    if not os.path.exists(f'./{tokeniser_path}'):
+        tokeniser = AutoTokenizer.from_pretrained(
+            tokeniser_path,
+            use_fast=False,
+        )
+        tokeniser.save_pretrained(tokeniser_path)
+        tokeniser = None
+
     def tokenise_partition(text: pl.Series):
+        global tokeniser
+        if tokeniser is None:
+            tokeniser = AutoTokenizer.from_pretrained(
+                tokeniser_path,
+                add_eos_token=True,
+                add_bos_token=True,
+                use_fast=False,
+            )
         tokens = tokeniser(
-            (tokeniser.bos_token + text + tokeniser.eos_token).to_list(), 
+            text.to_list(),
+            add_special_tokens=True, 
             return_tensors=None,
             truncation=False,
             padding=False,
@@ -33,18 +47,14 @@ def main(
         return pl.Series(
             name=text.name + '_tokens',
             values=tokens, 
-            dtype=pl.List(pl.Int32),
+            dtype=pl.List(pl.Int64),
         )
-
-    # TODO make this relative to project package root
-    if not os.path.exists(f'./{tokeniser}'):
-        tokeniser.save_pretrained(tokeniser_path)
 
     for col in columns:
         lf = lf.with_columns(
             pl.col(col)
             .fill_null('')
-            .map_batches(tokenise_partition)
+            .map_batches(tokenise_partition, return_dtype=pl.List(pl.Int64))
             .alias(f'{col}_tokens')
         )
     return lf

@@ -2,8 +2,6 @@ import polars as pl
 from dataclasses import dataclass
 import os
 
-os.environ['POLARS_MAX_THREADS'] = '16'
-
 @dataclass(frozen=True)
 class Filter:
     exclude = ['keywords:', 'Keywords:' 'query=', 'http', 'Abstract', 'Abstract '
