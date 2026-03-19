@@ -32,7 +32,7 @@ Specialized data handling for citation counts, treating citation percentile buck
 Integrated with Modal for serverless GPU inference and MLflow for experiment tracking.
 
 * **Data Pipeline:** 
-Custom PyTorch Datasets and Samplers, parallelised data -> GPU copy with dedicated stream
+Flexible data pre-processing CLI, custom PyTorch classes for dataset serving to GPU
 
 ## 1.2 Tech Stack
 * **Core:** Python (3.13), PyTorch (Deep Learning)
@@ -46,19 +46,9 @@ Custom PyTorch Datasets and Samplers, parallelised data -> GPU copy with dedicat
 * **Tooling:** Typer (CLI), Rich (Console logging)
 
 # 2. Road-map
-## v0.2
+## v0.3
 <details>
-<summary><b>v0.2.0 Data pre-processing CLI (In Progress)</b></summary>
-
-- Standardise data pre-processing notebook into separate functions.
-
-- Orchestrate pre-processing functions in main loop.
-
-- CLI control via Typer app, functions induced/skipped via option flags.
-</details>
-
-<details>
-<summary><b>v0.2.1 Dataloader flexibility (In Progress)</b></summary>
+<summary><b>v0.3.0 Dataloader flexibility (In Progress)</b></summary>
 
 - Support concatenation of multiple string/token columns when serving examples from dataloader.
 
@@ -66,9 +56,9 @@ Custom PyTorch Datasets and Samplers, parallelised data -> GPU copy with dedicat
 
 </details>
 
-## v0.3
+## v0.4
 <details>
-<summary><b>v0.3.0 Refactor Config (Planned)</b></summary>
+<summary><b>v0.4.0 Refactor Config (Planned)</b></summary>
 
 - Move code-as-config module from root to src
 
@@ -79,25 +69,32 @@ Custom PyTorch Datasets and Samplers, parallelised data -> GPU copy with dedicat
 - Allow config value overrides from CLI via option flags
 </details>
 
-## v0.4
+## v0.5
 <details>
-<summary><b>v0.4.0 Modernise CLI access (Planned)</b></summary>
+<summary><b>v0.5 Data Exploration CLI (Planned)</b></summary>
 
-- Refactor src module imports as relative to /src
-
-- Standardise cli access via pyproject.toml build parameters
+- Integrate data visualisation tools into CLI
 
 </details>
 
 ## v1.0
 <details>
-<summary><b>v1.0.0 Full experiment suite</b></summary
+<summary><b>v1.0.0 Full experiment suite (Planned)</b></summary>
 
-- MLflow run management with automatic name creation
+- Refactor src module imports as relative to /src, standardise cli access via pyproject.toml build parameters
 
-- CLI driven checkpoint loading with MLflow child run assignment 
+- Refactor train loop into /apps
 
-- Automated Hyperperameter search logic, with MLflow parent/child assignment
+- MLflow run management with automatic name creation, CLI driven checkpoint loading with MLflow child run assignment 
+
+- Automated Hyper parameter search logic, with MLflow parent/child assignment
+
+</details>
+## v1.1
+<details>
+<summary><b>v1.1.0 Text Embedding (Planned)</b></summary>
+
+- Embed string columns via pre-processing CLI
 
 </details>
 
