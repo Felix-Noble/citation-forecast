@@ -3,7 +3,7 @@ from dataclasses import dataclass
 import pandas as pd
 from rich.table import Table
 from rich.console import Console
-from sklearn.metrics import roc_auc_score, balanced_accuracy_score # pyright: ignore[reportUnknownVariableType, reportMissingTypeStubs] 
+from sklearn.metrics import roc_auc_score, precision_recall_curve, balanced_accuracy_score, mean_absolute_error # pyright: ignore[reportUnknownVariableType, reportMissingTypeStubs] 
 import math
 import torch
 from pathlib import Path
@@ -189,9 +189,19 @@ class ClassificationTracker:
             return
 
         try:
+            mae = mean_absolute_error(y_true, probs)
+            self.log_metric(f'{prefix}_MAE', mae, preds.shape[0])
+        except Exception as e:
+            logger.error(e)
+
+
+        try:
             balanced_accuracy = balanced_accuracy_score(y_true, preds)
             self.log_metric(f'{prefix}_balanced_accuracy', balanced_accuracy, preds.shape[0]) # pyright: ignore[reportArgumentType]
 
+        except Exception as e:
+            logger.error(e)
+        try:
             roc_auc = roc_auc_score( # pyright: ignore[reportUnknownVariableType]
                 y_true.long().numpy(), 
                 probs.numpy(), 
@@ -200,7 +210,15 @@ class ClassificationTracker:
             self.log_metric(f'{prefix}_roc_auc', roc_auc, probs.shape[0]) # pyright: ignore[reportArgumentType]
         except Exception as e:
             logger.error(e)
-            return
+
+        try: 
+            pr_auc = precision_recall_curve(
+                y_true.long().numpy(),
+                probs.numpy(),
+                )
+            self.log_metric(f'{prefix}_PR_AUC', pr_auc, probs.shape[0]) # pyright: ignore[reportArgumentType]
+        except Exception as e:
+            logger.error(e)
 
     def _aggregate_metrics(self) -> dict[str, float]:
         " Aggregates metrics stored as named tuples "
