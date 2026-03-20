@@ -1,11 +1,8 @@
 from .oned_distribution_tracker import OneDDistributionTracker
 from typing import NamedTuple, override
 from dataclasses import dataclass
-import pandas as pd
-from rich.table import Table
-from rich.console import Console
+import numpy as np
 from sklearn.metrics import roc_auc_score, precision_recall_curve, auc, balanced_accuracy_score, mean_absolute_error # pyright: ignore[reportUnknownVariableType, reportMissingTypeStubs] 
-import math
 import torch
 from pathlib import Path
 from logging import getLogger
@@ -103,6 +100,8 @@ class ClassificationTracker(OneDDistributionTracker):
                 y_true.long().numpy(),
                 probs.numpy(),
                 )
+            precision = np.sort(precision)
+            recall = np.flip(np.sort(recall))
             pr_auc = auc(precision, recall)
             self.log_metric(f'{prefix}_PR_AUC', pr_auc, probs.shape[0]) # pyright: ignore[reportArgumentType]
         except Exception as e:
