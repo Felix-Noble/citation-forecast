@@ -12,7 +12,7 @@ from src.builders import \
 from src.data import PortionSampler
 from .eval import eval_model
 from .callbacks import isnan_async
-from .tracking import OneDDistributionTracker, log_params, log_lrs
+from .tracking import OneDDistributionTracker, ClassificationTracker, log_params, log_lrs
 
 import torch
 import os
@@ -83,7 +83,7 @@ def main(
         lr = config.train.lr,
         weight_decay = config.train.weight_decay,
     )
-    metric_tracker = OneDDistributionTracker(
+    metric_tracker = ClassificationTracker(
         build_tracker_params(device=device),
         dtype=torch.float32,
         device=device,
