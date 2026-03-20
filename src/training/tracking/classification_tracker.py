@@ -55,14 +55,21 @@ class ClassificationTracker(OneDDistributionTracker):
                 prefix: str = "",
                 ) -> None:
         logits = self._gather_store(store_name=logit_store_name)
-        probs = torch.softmax(
-            logits,
-            dim=1,
-        )
-        preds = torch.argmax(
-            probs,
-            dim=1,
-        ).squeeze(-1)
+
+        if config.model.n_out == 1:
+            # binary case 
+            probs = torch.nn.functional.sigmoid(logits)
+            preds = torch.zeros_like(probs)
+            preds[probs > 0.5] = 1
+        else:
+            probs = torch.softmax(
+                logits,
+                dim=1,
+            )
+            preds = torch.argmax(
+                probs,
+                dim=1,
+            ).squeeze(-1)
         y_true = self._gather_store(store_name=y_store_name)
 
         if logits.size(0) != y_true.size(0):
@@ -99,5 +106,9 @@ class ClassificationTracker(OneDDistributionTracker):
             pr_auc = auc(precision, recall)
             self.log_metric(f'{prefix}_PR_AUC', pr_auc, probs.shape[0]) # pyright: ignore[reportArgumentType]
         except Exception as e:
-            logger.error(e)
+            try:
+                mssg = f'{e}\nrecall:{recall}\nprecision:{precision}'
+            except:
+                mssg = str(e)
+            logger.error(mssg)
 
