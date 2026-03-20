@@ -1,7 +1,7 @@
 from config import config, env
 from src.utils.logging import setup_logger
 from src.builders import \
-        build_ordinal_datasets, \
+        build_datasets, \
         build_progress_bars, \
         build_lr_scheduler, \
         build_dataloader, \
@@ -91,7 +91,7 @@ def main(
         )
 
     scheduler = build_lr_scheduler(optimizer)
-    train_dataset, test_dataset = build_ordinal_datasets(dataset=config.train.dataset, dry_run=dry_run)
+    train_dataset, test_dataset = build_datasets(dataset=config.train.dataset, dry_run=dry_run)
 
     examples_per_epoch = len(train_dataset) # update this for when sampling is introduced
     train_sampler = None
