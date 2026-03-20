@@ -11,7 +11,7 @@ def build_binary_datasets(
     train_dataset = BinaryCategoricalDataset(
         data_path=str(env.STAGED_LOC / dataset),
         X='abstract_tokens',
-        y='citation_normalized_percentile',
+        y='cited_by_count',
         t_start=config.train.train_start.toordinal(),
         t_end=config.train.train_end.toordinal(),
         config=config,
@@ -23,7 +23,7 @@ def build_binary_datasets(
     test_dataset = BinaryCategoricalDataset(
         data_path=str(env.STAGED_LOC / dataset),
         X='abstract_tokens',
-        y='citation_normalized_percentile',
+        y='cited_by_count',
         t_start=config.train.test_start.toordinal(),
         t_end=config.train.test_end.toordinal(),
         config=config,
