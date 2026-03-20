@@ -52,21 +52,22 @@ Flexible data pre-processing CLI, custom PyTorch classes for dataset serving to 
 
 - Support concatenation of multiple string/token columns when serving examples from dataloader.
 
-- Add option for string tokenisation on data load/serving, transformers tokeniser selected via config
-
 </details>
 
 ## v0.4
 <details>
-<summary><b>v0.4.0 Refactor Config (Planned)</b></summary>
+<summary><b>v0.4.0 Feature Consolidation (Planned)</b></summary>
 
-- Move code-as-config module from root to src
+- Move code-as-config module from root to src, allow config value overrides from CLI via option flags
+
+- Refactor train (main) loop into /apps
+
+- Create metric tracker base class for tracking logic, overide metric calculation in children 
 
 - Seperate train/data/env configs into distinct files
 
 - Add dedicated loss/optimisation config for lr schedule milestones etc.
 
-- Allow config value overrides from CLI via option flags
 </details>
 
 ## v0.5
@@ -83,7 +84,6 @@ Flexible data pre-processing CLI, custom PyTorch classes for dataset serving to 
 
 - Refactor src module imports as relative to /src, standardise cli access via pyproject.toml build parameters
 
-- Refactor train loop into /apps
 
 - MLflow run management with automatic name creation, CLI driven checkpoint loading with MLflow child run assignment 
 
