@@ -6,19 +6,12 @@ as a hands-on environment to experiment with NLP forecasting,
 while extending my practical knowledge of 
 Python, software engineering, and deep learning.
 
-The core training loop is driven entirely by the
+The core training loop and data pre-processing is driven entirely by
 CLI and integrates directly with MLflow to track experiments and compare
 iterations efficiently. I integrated  a custom registry system, allowing clean, string-based access
 to models, loss functions,
 and optimizers directly from configuration files, with all inputs strictly
 validated by Pydantic. 
-
-Development is ongoing. I am currently standardizing the data preprocessing
-workflow into a dedicated Typer CLI app and setting up MLflow nested
-runs for better checkpoint
-management and validation inference. Alongside this, I am actively
-experimenting with variations of a Wasserstein-entropy-based loss function
-to better handle the entropy of ordinal classifications.
 
 # 1. Tech Stack & Key Features
 ## 1.1 Key Features
@@ -90,6 +83,7 @@ Flexible data pre-processing CLI, custom PyTorch classes for dataset serving to 
 - Automated Hyper parameter search logic, with MLflow parent/child assignment
 
 </details>
+
 ## v1.1
 <details>
 <summary><b>v1.1.0 Text Embedding (Planned)</b></summary>
