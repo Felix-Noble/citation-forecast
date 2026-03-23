@@ -31,10 +31,10 @@ def build_dataloader(
                 batch_first=True, 
                 padding_value=pad_value,
                 padding_side='right',
-                )
+                ).clone()
         y = torch.tensor(y)
         if return_mask:
-            mask = (X != pad_value).bool().unsqueeze(1).expand(-1, X.shape[1], -1)
+            mask = (X != pad_value).bool().unsqueeze(1).expand(-1, X.shape[1], -1).clone()
             return X, y, mask 
         return X, y
 
@@ -48,6 +48,6 @@ def build_dataloader(
         shuffle=config.train.shuffle,
         sampler = sampler,
         drop_last=True,
-        collate_fn=pad_to_longest_collate,
+        #collate_fn=pad_to_longest_collate,
     )
     return dataloader

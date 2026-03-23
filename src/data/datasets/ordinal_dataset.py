@@ -89,7 +89,7 @@ class OrdinalDataset(Dataset[tuple[Tensor, ...]]):
     @override
     def __getitem__(self, idx: int) -> tuple[Tensor, ...]:
         x: Tensor = torch.cat(
-            [torch.from_numpy(arr) for arr in self.df.loc[idx, self.x].to_list()],
+            [torch.from_numpy(arr.copy()) for arr in self.df.loc[idx, self.x].to_list()],
                                  ).flatten()
         if self.PAD and x.size(0) < self.MAX_LEN:
             x = nn.functional.pad(x, (0, self.MAX_LEN - x.size(0)), value=self.PAD_VALUE)
