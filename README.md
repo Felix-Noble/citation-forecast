@@ -18,14 +18,11 @@ validated by Pydantic.
 * **Modular Trainer Architecture:**
 Decoupled training loops using a Registry (utils) pattern for easy swapping of losses, optimizers, and models.
 
-* **Ordinal Regression Focus:** 
-Specialized data handling for citation counts, treating citation percentile buckets as ordinal classes rather than unordered classes or pure regression
-
 * **Production-Ready Inference:** 
 Integrated with Modal for serverless GPU inference and MLflow for experiment tracking.
 
 * **Data Pipeline:** 
-Flexible data pre-processing CLI, custom PyTorch classes for dataset serving to GPU
+Data pre-processing CLI and custom PyTorch Datasets/Loaders forming a flexible ETL pipeline
 
 ## 1.2 Tech Stack
 * **Core:** Python (3.13), PyTorch (Deep Learning)
@@ -39,17 +36,10 @@ Flexible data pre-processing CLI, custom PyTorch classes for dataset serving to 
 * **Tooling:** Typer (CLI), Rich (Console logging)
 
 # 2. Road-map
-## v0.3
-<details>
-<summary><b>v0.3.0 Dataloader flexibility (In Progress)</b></summary>
-
-- Support concatenation of multiple string/token columns when serving examples from dataloader.
-
-</details>
 
 ## v0.4
 <details>
-<summary><b>v0.4.0 Feature Consolidation (Planned)</b></summary>
+<summary><b>v0.4.0 Feature Consolidation (In-Progress)</b></summary>
 
 - Move code-as-config module from root to src, allow config value overrides from CLI via option flags
 

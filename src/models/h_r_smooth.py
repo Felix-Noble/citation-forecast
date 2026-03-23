@@ -16,6 +16,7 @@ class ModelConfig(BaseModel):
     embed_dim: PositiveInt
     hidden_dim: PositiveInt
     n_out: PositiveInt
+    n_params_out: int
     dropout: PositiveFloat
 
 class LayerConfig(BaseModel):
@@ -202,8 +203,8 @@ class H_R_Smooth(nn.Module):
 
         self.layers = nn.ModuleList(layers)
 
-        # head projects to n_out + 1 for confidence (gaussian sigma)
-        self.head = nn.Linear(config.embed_dim * config.top_k[-1], config.n_out + 1, device=device, dtype=dtype)
+        # head projects to n_out + n_params_out for confidence (target smoothing values)
+        self.head = nn.Linear(config.embed_dim * config.top_k[-1], config.n_out + config.n_params_out, device=device, dtype=dtype)
 
     def forward(self, x: Tensor, mask: Tensor) -> tuple[Tensor, Tensor, Tensor]:
         
@@ -219,8 +220,14 @@ class H_R_Smooth(nn.Module):
         out = out * mask[:, 0, :].unsqueeze(-1)
         out = out.flatten(-2, -1)
         logits = self.head(out)
-        out, sigma = logits[:, :-1], logits[:, -1]
-        probs = torch.softmax(out, dim=-1)
-        sigma = nn.functional.sigmoid(sigma)
+        if self.config.n_params_out > 0:
+            out, sigma = logits[:, :-self.config.n_params_out], logits[:, -self.config.n_params_out:]
+            probs = torch.softmax(out, dim=-1)
+            sigma = nn.functional.sigmoid(sigma)
+        else:
+            out = logits
+            probs = torch.nn.functional.sigmoid(out)
+            sigma = torch.tensor(float('nan'), dtype=torch.float32)
+
         return logits, probs, sigma
 

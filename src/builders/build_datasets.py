@@ -10,25 +10,25 @@ def build_binary_datasets(
 
     train_dataset = BinaryCategoricalDataset(
         data_path=str(env.STAGED_LOC / dataset),
-        X='abstract_tokens',
+        X=['title_tokens', 'abstract_tokens'],
         y='cited_by_count',
         t_start=config.train.train_start.toordinal(),
         t_end=config.train.train_end.toordinal(),
         config=config,
-        pad=True,
-        return_mask=True,
-        dry_run=dry_run
+        return_mask=False,
+        pad=False,
+        dry_run=dry_run,
     )
 
     test_dataset = BinaryCategoricalDataset(
         data_path=str(env.STAGED_LOC / dataset),
-        X='abstract_tokens',
+        X=['title_tokens', 'abstract_tokens'],
         y='cited_by_count',
         t_start=config.train.test_start.toordinal(),
         t_end=config.train.test_end.toordinal(),
         config=config,
-        pad=True,
-        return_mask=True,
+        return_mask=False,
+        pad=False,
         dry_run=dry_run
     )
     
@@ -47,8 +47,8 @@ def build_ordinal_datasets(
         t_start=config.train.train_start.toordinal(),
         t_end=config.train.train_end.toordinal(),
         config=config,
-        pad=True,
-        return_mask=True,
+        pad=False,
+        return_mask=False,
         dry_run=dry_run
     )
 
@@ -59,8 +59,8 @@ def build_ordinal_datasets(
         t_start=config.train.test_start.toordinal(),
         t_end=config.train.test_end.toordinal(),
         config=config,
-        pad=True,
-        return_mask=True,
+        pad=False,
+        return_mask=False,
         dry_run=dry_run
     )
     

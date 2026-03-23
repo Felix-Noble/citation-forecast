@@ -29,6 +29,7 @@ class ModelConfig:
     embed_dim: int = 8
     hidden_dim: int = 8
     n_out: int = 6
+    n_params_out: int = 1
     dropout: float = 0.05
 
 @dataclass(frozen=True)
