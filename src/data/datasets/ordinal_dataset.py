@@ -1,5 +1,6 @@
 import polars as pl
 import pandas as pd  
+from typing import override
 import torch.nn as nn
 import torch
 from torch import Tensor
@@ -15,19 +16,28 @@ _ = setup_logger(logger, config.logging)
 class OrdinalDataset(Dataset[tuple[Tensor, ...]]):
     def __init__(self, 
                  data_path: str,
-                 X: str,
-                 y: str,
+                 X: str | list[str],
+                 y: str | list[str],
                  t_start: int,
                  t_end: int,
                  config: Config = config,
-                 pad: bool = True,
+                 pad: bool = False,
                  truncate: bool | str = 'drop',
                  return_mask: bool = False,
                  dry_run: bool = False,
                  ):
         super().__init__()
-        self.X: str = X
-        self.y: str = y
+
+        if isinstance(X, str):
+            self.x: list[str] = [X]
+        else:
+            self.x: list[str] = X
+        if isinstance(y, str):
+            self.y: list[str] = [y]
+        else:
+            self.y: list[str] = y
+        columns = self.x + self.y + ['publication_date_int']        
+
         self.t_start: int = t_start
         self.t_end: int = t_end
         self.MAX_LEN: int = config.model.max_len
@@ -36,12 +46,6 @@ class OrdinalDataset(Dataset[tuple[Tensor, ...]]):
         self.PAD: bool = pad
         self.RETURN_MASK: bool = return_mask
         self.TRUNCATE: bool | str = truncate
-
-        if y is None:
-            columns = [self.X]
-        else:
-            columns = list(set([self.X, self.y]))
-        columns += ['publication_date_int']        
 
         self.lf: pl.LazyFrame = (
                 pl.scan_parquet(data_path)
@@ -53,25 +57,28 @@ class OrdinalDataset(Dataset[tuple[Tensor, ...]]):
 
         self.df: pd.DataFrame = self.lf.collect().to_pandas()
         prev_n = self.df.shape[0]
-        self.df = self.df.dropna(subset=self.X)
-        logger.info(f"Dropped {prev_n - self.df.shape[0]} missing '{self.X}' rows")
-        if self.y is not None:
+        self.df = self.df.dropna(subset=self.x)
+        logger.info(f"Dropped {prev_n - self.df.shape[0]} missing '{self.x}' rows")
+        if self.y:
             prev_n = self.df.shape[0]
             self.df = self.df.dropna(subset=self.y)
             logger.info(f"Dropped {prev_n - self.df.shape[0]} missing '{self.y}' rows")
 
         if truncate == 'drop':
             prev_n = self.df.shape[0]
-            self.df[f'{self.X}_len'] =  self.df[self.X].apply(lambda x : len(x))# pyright: ignore[reportUnknownMemberType]
-            self.df = self.df.loc[self.df[f'{self.X}_len'] <= self.MAX_LEN, columns]
-            logger.info(f"Dropped {prev_n - self.df.shape[0]:,} '{self.X}' len > {self.MAX_LEN:,} | {self.df.shape[0]:,} remaining") # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType]
+            self.df['example_len'] = 0
+            for col in self.x:
+                self.df[f'{col}_len'] =  self.df[col].apply(lambda x : len(x))# pyright: ignore[reportUnknownMemberType]
+                self.df['example_len'] += self.df[f'{col}_len'] 
+            self.df = self.df.loc[self.df['example_len'] <= self.MAX_LEN, columns]
+            logger.info(f"Dropped {prev_n - self.df.shape[0]:,} '{self.x}' len > {self.MAX_LEN:,} | {self.df.shape[0]:,} remaining") # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType]
 
         self.df.reset_index(drop=True, inplace=True) 
 
     def __len__(self) -> int:
         return self.df.shape[0]
 
-    def _format_X(self, x: Tensor) -> Tensor:
+    def _format_x(self, x: Tensor) -> Tensor:
         return x.long()
 
     def _format_y(self, y: Tensor) -> Tensor:
@@ -79,18 +86,23 @@ class OrdinalDataset(Dataset[tuple[Tensor, ...]]):
         one_hot = nn.functional.one_hot(ordinal, num_classes=self.N_BUCKETS)
         return one_hot 
 
+    @override
     def __getitem__(self, idx: int) -> tuple[Tensor, ...]:
-        x: Tensor = torch.tensor(self.df.loc[idx, self.X], dtype=torch.float32)
-
-        if self.PAD & x.size(0) < self.MAX_LEN:
+        x: Tensor = torch.cat(
+            [torch.from_numpy(arr) for arr in self.df.loc[idx, self.x].to_list()],
+                                 ).flatten()
+        if self.PAD and x.size(0) < self.MAX_LEN:
             x = nn.functional.pad(x, (0, self.MAX_LEN - x.size(0)), value=self.PAD_VALUE)
         if self.TRUNCATE == True & x.size(0) > self.MAX_LEN:
             x = x[:self.MAX_LEN]
        
-        x = self._format_X(x)
+        x = self._format_x(x)
         y = torch.tensor(float('nan'), dtype=torch.float32) 
-        if self.y is not None:
-            y = torch.tensor(self.df.loc[idx, self.y], dtype=torch.float32)
+        if self.y:
+            y: Tensor = torch.tensor(
+                    self.df.loc[idx, self.y].to_list(),
+                    dtype=torch.float32
+                                     ).flatten()
             y = self._format_y(y)
 
         if self.RETURN_MASK:
