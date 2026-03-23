@@ -15,8 +15,8 @@ def build_binary_datasets(
         t_start=config.train.train_start.toordinal(),
         t_end=config.train.train_end.toordinal(),
         config=config,
-        return_mask=False,
-        pad=False,
+        return_mask=True,
+        pad=True,
         dry_run=dry_run,
     )
 
@@ -27,8 +27,8 @@ def build_binary_datasets(
         t_start=config.train.test_start.toordinal(),
         t_end=config.train.test_end.toordinal(),
         config=config,
-        return_mask=False,
-        pad=False,
+        return_mask=True,
+        pad=True,
         dry_run=dry_run
     )
     
@@ -47,8 +47,8 @@ def build_ordinal_datasets(
         t_start=config.train.train_start.toordinal(),
         t_end=config.train.train_end.toordinal(),
         config=config,
-        pad=False,
-        return_mask=False,
+        pad=True,
+        return_mask=True,
         dry_run=dry_run
     )
 
@@ -59,8 +59,8 @@ def build_ordinal_datasets(
         t_start=config.train.test_start.toordinal(),
         t_end=config.train.test_end.toordinal(),
         config=config,
-        pad=False,
-        return_mask=False,
+        pad=True,
+        return_mask=True,
         dry_run=dry_run
     )
     
