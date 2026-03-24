@@ -5,8 +5,9 @@ import torch.nn as nn
 
 class ModelConfig(BaseModel):
     model_name: str
-    pad_token: int
+    pad_token_id: int
     top_k: tuple[int, ...]
+    r_layers: tuple[int, ...]
     selector_heads: tuple[int, ...]
     process_heads: tuple[int, ...]
     n_layers: PositiveInt
@@ -14,11 +15,13 @@ class ModelConfig(BaseModel):
     embed_dim: PositiveInt
     hidden_dim: PositiveInt
     n_out: PositiveInt
+    n_params_out: int
     dropout: PositiveFloat
 
 class LayerConfig(BaseModel):
     k: PositiveInt
     diff_k: bool
+    r_layer: bool
     selector_heads: PositiveInt
     process_heads: PositiveInt
     embed_dim: PositiveInt
@@ -106,6 +109,9 @@ class HAttnBlock(nn.Module):
         if config.diff_k:
             self.selective_attn = SelectiveAttn(config, device, dtype)
 
+        if self.config.r_layer:
+            self.r_net = nn.GRU(config.embed_dim, config.embed_dim, dropout=config.dropout, batch_first=True, device=device, dtype=dtype)
+
         self.process_attn = MultiHeadSelfAttn(config.embed_dim, config.hidden_dim, config.hidden_dim, config.process_heads, config.dropout, device, dtype)
 
         self.mlp = MLP(config, device, dtype) 
@@ -118,13 +124,15 @@ class HAttnBlock(nn.Module):
             top_k = min(T, self.config.k)
             scores = self.selective_attn(x, mask)  
             scores = scores * mask[:, 0, :].unsqueeze(-1)
+            x = x * scores
             _,  inds = torch.topk(scores.squeeze(-1), top_k, dim=-1)
             inds, _ = torch.sort(inds.long(), dim=1)
-            ordered_scores = torch.gather(
-                scores, 
-                dim=1, 
-                index=inds.unsqueeze(-1)
-            )
+#            ordered_scores = torch.gather(
+#                scores, 
+#                dim=1, 
+#                index=inds.unsqueeze(-1)
+#            )
+
             selected_tokens = torch.gather(
                 x, 
                 dim=1, 
@@ -137,17 +145,26 @@ class HAttnBlock(nn.Module):
                 index=inds.unsqueeze(-1).expand(-1, -1, top_k) 
             )
             out = selected_tokens + self.mlp(
-                self.process_attn(selected_tokens * ordered_scores, selected_mask)
+                self.process_attn(selected_tokens, selected_mask)
             )
-            return out.contiguous(), selected_mask.contiguous()
+            out = out.contiguous()
+            mask = selected_mask.contiguous()
         else:
             out = x + self.mlp(
                 self.process_attn(x, mask)
             )
-            return out.contiguous(), mask
 
-class H_ATTN(nn.Module):
-    MODEL_NAME = 'h_attn_single'
+            out = out.contiguous()
+        
+        if self.config.r_layer:
+            r_out, _ = self.r_net(out)
+            out = out + r_out
+            #out, _ = self.r_net(out)
+
+        return out, mask
+
+class H_R_Smooth(nn.Module):
+    """ Heirarchical recurrent attention with target smoothing"""
     config_schema = ModelConfig
     def __init__(
             self, 
@@ -173,6 +190,7 @@ class H_ATTN(nn.Module):
             layer_config = LayerConfig(
                 k=config.top_k[i],
                 diff_k = top_k_diffs[i],
+                r_layer = True if self.config.r_layers[i] else False,
                 selector_heads=config.selector_heads[i],
                 process_heads=config.process_heads[i],
                 embed_dim=config.embed_dim,
@@ -183,9 +201,10 @@ class H_ATTN(nn.Module):
 
         self.layers = nn.ModuleList(layers)
 
-        self.head = nn.Linear(config.embed_dim * config.top_k[-1], config.n_out, device=device, dtype=dtype)
+        # head projects to n_out + n_params_out for confidence (target smoothing values)
+        self.head = nn.Linear(config.embed_dim * config.top_k[-1], config.n_out + config.n_params_out, device=device, dtype=dtype)
 
-    def forward(self, x: Tensor, mask: Tensor) -> Tensor:
+    def forward(self, x: Tensor, mask: Tensor) -> tuple[Tensor, Tensor, Tensor]:
         
         embeddings = self.embed(x)
 
@@ -198,42 +217,15 @@ class H_ATTN(nn.Module):
 
         out = out * mask[:, 0, :].unsqueeze(-1)
         out = out.flatten(-2, -1)
-        out = self.head(out)
-        return out
+        logits = self.head(out)
+        if self.config.n_params_out > 0:
+            out, sigma = logits[:, :-self.config.n_params_out], logits[:, -self.config.n_params_out:]
+            probs = torch.softmax(out, dim=-1)
+            sigma = nn.functional.sigmoid(sigma)
+        else:
+            out = logits
+            probs = torch.nn.functional.sigmoid(out)
+            sigma = torch.tensor(float('nan'), dtype=torch.float32)
 
-if __name__ == '__main__':
-    test_val = 2 
-    
-    if test_val == 1:
-        torch.manual_seed(2026)
-        test_embed = (torch.rand(2,3,2) * 10).long()
-        test_scores = (torch.rand(2,3) * 10).long()
-        test_mask = (torch.rand(2,3,3) * 10).long()
+        return logits, probs, sigma
 
-        _, test_inds = torch.topk(test_scores, dim=1, k=2)
-        print(test_mask)
-        print(test_mask.shape)
-        print(test_inds)
-        print(test_inds.shape)
-        test_gather = torch.gather(test_mask, dim=1, index=test_inds.unsqueeze(-1).expand(-1, -1, 3))
-        print(test_gather)
-    
-    if test_val == 3:
-        config = ModelConfig(
-                model_name = 'test',
-                pad_token = 0,
-                outer_heads = 2,
-                top_k = [4,1],
-                selector_heads = [3,3],
-                process_heads = [3,3],
-                n_layers = 2,
-                vocab_size = 4 ,
-                embed_dim = 3,
-                hidden_dim = 10,
-                n_out = 5,
-            )
-        model = H_ATTN(config, 'cpu', torch.float32)
-        input = torch.ones(7, 5)
-        mask = torch.ones(7, 5, 5)
-        out = model(input.long(), mask)
-        print(out.shape)
