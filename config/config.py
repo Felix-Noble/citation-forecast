@@ -18,7 +18,7 @@ class LossConfig:
 class ModelConfig:
     model_name: str = 'h_r_smooth'
     vocab_size: int = 201_088
-    pad_token_id: int = 0
+    pad_token_id: int = 19999
     dtype: torch.dtype =  torch.float32
     top_k: tuple[int, ...] = top_k
     r_layers: tuple[bool, ...] = r_layers

@@ -32,20 +32,24 @@ class InferenceWrapper:
         from models.general.model import Model, config
 
         self.device=torch.device('cuda')
-        self.max_len = config.data.max_len
+        self.max_len = config.model.max_len
 
         self.model = Model(config.model, torch.device('cuda'), torch.float32)
+        print('Model formed')
         self.model.eval()
         # Weights
+        print(os.listdir('/weights'))
         self.model.load_state_dict(torch.load('/weights/weights.pt', weights_only=True))
-
+        print('Model Loaded')
         # Tokenizer
         from transformers import AutoTokenizer
         tokenizer_name = 'openai/gpt-oss-120b'
         tokenizer_path ='/tokenizer/openai-gpt-oss-120b'
         if os.path.exists(f'/tokenizer/{tokenizer_path}'):
+            print('Loading tokeniser from volume')
             self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_path)
         else:
+            print('Installing tokeniser')
             self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
             self.tokenizer.pad_token_id = 0
             self.tokenizer.save_pretrained(tokenizer_path)
@@ -54,32 +58,38 @@ class InferenceWrapper:
     @modal.batched(max_batch_size=4, wait_ms=500)
     def process_request(self, prompt: list[str] | list[list[str]]):
         if isinstance(prompt[0], list):
+            print('Unwrapping prompt')
             unwrapped = []
             for ls in prompt:
                 unwrapped += ls
             prompt = unwrapped
         try: 
+            print('Tokenising')
             token_out = self.tokenizer(
                 prompt, 
-                add_special_tokens=True,
+                add_special_tokens=False,
                 return_tensors="pt",
-                max_len=self.max_len,
-                padding=True,
+                max_length=self.max_len,
+                padding='max_length',
                 truncate=True,
                 padding_side='right',
             )
 
+            print('Tokens made:', token_out['input_ids'].shape)
+            print('Max len:', self.max_len)
             tokens = token_out['input_ids'].to(self.device)
             mask = token_out['attention_mask'].to(self.device)
             mask = mask.bool().unsqueeze(1).expand(-1, mask.size(-1), -1)
-
+            print('Moved data to GPU')
             with torch.inference_mode():
-                logits = self.model(tokens, mask)
-                probs = torch.softmax(logits, dim=-1)
-
+                logits, probs, sigma = self.model(tokens, mask)
+            print('Inference complete')
             return probs.cpu().tolist()
 
         except Exception as e:
+            print(str(e))
+            print(f'ERROR: {e}')
+            raise e
             return [str(e) for _ in range(len(prompt))]
 
 @app.function(
@@ -92,5 +102,5 @@ async def predict(data: dict):
     # This creates an instance of the class and calls the batched method
     # Modal automatically groups these calls into 'handle_batch'
     instance = InferenceWrapper()
-    probs = instance.process_request.remote([data["prompt"]])
+    probs = instance.process_request.remote([data["promptStr"]])
     return {"probs": probs}
