@@ -1,12 +1,12 @@
 # config/__init__.py
-from .config import Config
+from .config import Config, TrainConfig, ModelConfig
 from .env import Env
 
 config: Config = Config()
 env: Env = Env()
 
 __all__ = [
-        'config', 'Config',
+        'config', 'Config', 'TrainConfig', 'ModelConfig',
         'env'
         ]
 
