@@ -37,9 +37,18 @@ Data pre-processing CLI and custom PyTorch Datasets/Loaders forming a flexible E
 
 # 2. Road-map
 
-## v0.4
+## 0.4 
 <details>
-<summary><b>v0.4.0 Feature Consolidation (In-Progress)</b></summary>
+<summary><b>v0.4.0 Eval CLI (In Progress)</b></summary>
+- CLI app for evaluating models
+    - Config driven with optional CLI overrides 
+    - Temporal scrub with variable intervals and MLflow tracking
+    - JSON data export for website historical performance graphs
+</details>
+
+## v0.5
+<details>
+<summary><b>v0.5.0 Feature Consolidation (In-Progress)</b></summary>
 
 - Move code-as-config module from root to src, allow config value overrides from CLI via option flags
 
@@ -53,9 +62,9 @@ Data pre-processing CLI and custom PyTorch Datasets/Loaders forming a flexible E
 
 </details>
 
-## v0.5
+## v0.6
 <details>
-<summary><b>v0.5 Data Exploration CLI (Planned)</b></summary>
+<summary><b>v0.6 Data Exploration CLI (Planned)</b></summary>
 
 - Integrate data visualisation tools into CLI
 
