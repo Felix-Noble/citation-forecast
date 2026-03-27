@@ -8,6 +8,7 @@ from torch.nn.utils.rnn import pad_sequence
 def build_dataloader(
     dataset: Dataset[tuple[Tensor, ...] | Tensor],
     config: Config = config,
+    shuffle: bool = False,
     sampler = None,
 ) -> DataLoader[tuple[Tensor, ...] | Tensor]:
 
@@ -45,7 +46,7 @@ def build_dataloader(
         prefetch_factor=2,
         persistent_workers=True,
         pin_memory=True,
-        shuffle=config.train.shuffle,
+        shuffle=shuffle,
         sampler = sampler,
         drop_last=True,
         #collate_fn=pad_to_longest_collate,

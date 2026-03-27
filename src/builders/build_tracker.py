@@ -1,11 +1,26 @@
 from config import Config, config
+from src.training.tracking import ClassificationTracker
 from src.training.tracking.classification_tracker import StoreParams
 import torch
+
+def build_tracker(
+        device: torch.device,
+        dtype: torch.dtype,
+        config: Config = config
+                  ):
+
+    metric_tracker = ClassificationTracker(
+        build_tracker_params(device=device, config=config),
+        dtype=dtype,
+        device=device,
+        buffer=False,
+        )
+    return metric_tracker
 
 def build_tracker_params(
         device: torch.device,
         config: Config = config, 
-):
+        ):
     gpu = device
     cpu = torch.device('cpu')
     train_logits = StoreParams(

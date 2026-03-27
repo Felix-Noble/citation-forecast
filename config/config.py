@@ -59,7 +59,7 @@ class LogConfig:
     file: str = 'ERROR'
     console: str = 'DEBUG'
 
-@dataclass(frozen=True)
+@dataclass(frozen=False)
 class Config:
     model: ModelConfig = ModelConfig() 
     train: TrainConfig = TrainConfig()

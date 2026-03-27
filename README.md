@@ -81,7 +81,7 @@ Data pre-processing CLI and custom PyTorch Datasets/Loaders forming a flexible E
 
 </details>
 
-## v0.5
+## v0.6
 <details>
 <summary><b>v0.5.0 Feature Consolidation (In-Progress)</b></summary>
 
@@ -90,14 +90,6 @@ Data pre-processing CLI and custom PyTorch Datasets/Loaders forming a flexible E
 - Create metric tracker base class for tracking logic, overide metric calculation in children 
 - Seperate train/data/env configs into distinct files
 - Add dedicated loss/optimisation config for lr schedule milestones etc.
-
-</details>
-
-## v0.6
-<details>
-<summary><b>v0.6 Data Exploration CLI (Planned)</b></summary>
-
-- Integrate data visualisation tools into CLI
 
 </details>
 

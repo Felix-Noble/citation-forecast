@@ -5,7 +5,7 @@ from src.builders import \
         build_progress_bars, \
         build_lr_scheduler, \
         build_dataloader, \
-        build_tracker_params, \
+        build_tracker, \
         build_model, \
         build_loss, \
         build_optimizer
@@ -83,12 +83,10 @@ def main(
         lr = config.train.lr,
         weight_decay = config.train.weight_decay,
     )
-    metric_tracker = ClassificationTracker(
-        build_tracker_params(device=device),
+    metric_tracker = build_tracker(
         dtype=torch.float32,
         device=device,
-        buffer=False,
-        )
+            )
 
     scheduler = build_lr_scheduler(optimizer)
     train_dataset, test_dataset = build_datasets(dataset=config.train.dataset, dry_run=dry_run)
@@ -99,7 +97,7 @@ def main(
         examples_per_epoch = config.train.sample
         train_sampler = PortionSampler(train_dataset, config.train.sample)
 
-    train_dataloader = build_dataloader(train_dataset, sampler=train_sampler)
+    train_dataloader = build_dataloader(train_dataset, shuffle=config.train.shuffle, sampler=train_sampler)
     test_dataloader = build_dataloader(test_dataset)
     n_batches = len(train_dataloader) 
     grad_accumulation_steps_gpu = torch.tensor(config.train.grad_accumulation_steps, device=device) 
