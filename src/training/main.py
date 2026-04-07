@@ -184,6 +184,11 @@ def main(
                     metric_tracker=metric_tracker,
                     device=device,
                         )
+                _ = metric_tracker.calc_metrics(
+                    logit_store_name='test_logits',
+                    y_store_name='test_y',
+                    prefix='test'
+                )
 
             _ = metric_tracker.calc_metrics(
                 logit_store_name='train_logits',

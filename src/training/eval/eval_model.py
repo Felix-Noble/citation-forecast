@@ -38,10 +38,3 @@ def eval_model(
             metric_tracker.log_metric('test_sigma', sigma_cpu, X.shape[0])
             metric_tracker.process_values((logits.detach(), ), ('test_logits', ))
             example_progress.update(examples_done, advance=config.train.batch_size)
-
-    _ = metric_tracker.calc_metrics(
-        logit_store_name='test_logits',
-        y_store_name='test_y',
-        prefix='test'
-    )
-

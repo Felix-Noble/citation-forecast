@@ -5,7 +5,7 @@ from src.builders import \
         build_eval_example_progress, \
         build_epoch_progress, \
         build_dataloader, \
-        build_tracker, \
+        build_eval_tracker, \
         build_model, \
         build_loss \
 
@@ -15,7 +15,7 @@ from logging import getLogger
 import copy
 from contextlib import nullcontext
 from pathlib import Path
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import NamedTuple
 import typer 
 import os
@@ -94,6 +94,11 @@ def main(
                 '--clean-up', '-c',
                 help='Delete temporary files after run completes'
                 ),
+        dry_run: bool = typer.Option(
+                False,
+                '--dry-run',
+                help='Dry run with subset of dataset'
+                )
         ) -> None:
     # Required option checks 
     assert run_id, 'Provide a run id'
@@ -126,7 +131,7 @@ def main(
     stream_context = torch.cuda.stream(stream) if torch.cuda.is_available() else nullcontext()
     stream_sync = torch.cuda.synchronize if torch.cuda.is_available() else lambda : None
 
-    metric_tracker = build_tracker(device=torch.device('cpu'), dtype=torch.float32)
+    metric_tracker = build_eval_tracker(device=torch.device('cpu'), dtype=torch.float32)
 
     logger.info(f'MLflow experiment: {EXPERIMENT}')
     
@@ -179,54 +184,80 @@ def main(
     logger.info(f'Starting temporal iteration: from ... to... interval...') 
 
     current_t_start: datetime = start_date
-    while True:
+    with mlflow.start_run(run_name=f'{start_date.year}\
+                                    -{interval}\
+                                    -{end_date if end_date is not None else ':'}\
+                                    --{run_id}'):
+        param_dict = {
+                'run_id': run_id,
+                'start_date': start_date,
+                'end_date': end_date,
+                'interval': interval,
+                }
+        mlflow.log_params(param_dict)
+        while True:
 
-        current_t_end: datetime = datetime(
-                current_t_start.year + T_DELTA.year,
-                current_t_start.month + T_DELTA.month,
-                current_t_start.day + T_DELTA.day,
-                                   )
-        if end_date is not None and current_t_end > end_date:
-           current_t_end = end_date 
-        
-        logger.debug(f'Windwo from - {current_t_start} to - {current_t_end}')
-        window_config = copy.deepcopy(config)
-        window_config_args = config.train.__dict__ 
-        window_config_args['test_start']  = current_t_start
-        window_config_args['test_end']  = current_t_end
-        window_config.train = TrainConfig(**window_config_args)
+            current_t_end: datetime = datetime(
+                    current_t_start.year + T_DELTA.year,
+                    current_t_start.month + T_DELTA.month,
+                    current_t_start.day + T_DELTA.day,
+                                       )
+            if end_date is not None and current_t_end > end_date:
+               current_t_end = end_date 
+            
+            logger.debug(f'Windwo from - {current_t_start} to - {current_t_end}')
+            window_config = copy.deepcopy(config)
+            window_config_args = config.train.__dict__ 
+            window_config_args['test_start']  = current_t_start
+            window_config_args['test_end']  = current_t_end
+            window_config.train = TrainConfig(**window_config_args)
 
-        _, test_dataset = build_datasets(
-                dataset=DATASET,
-                dry_run=False,
-                config=window_config,
-                )
-        test_dataloader = build_dataloader(
-                dataset=test_dataset,
-                config=window_config,
-                )
-           
-        example_progress = example_progress_bar.add_task('Examples', total=len(test_dataset))
-         
-        eval_model(
-                model=model,
-                loss_fn=loss_fn,
-                dataloader=test_dataloader,
-                example_progress=example_progress_bar,
-                examples_done=example_progress,
-                stream_context=stream_context,
-                stream_sync=stream_sync,
-                metric_tracker=metric_tracker,
-                device=device,
-                config=config,
-                   )
+            _, test_dataset = build_datasets(
+                    dataset=DATASET,
+                    dry_run=dry_run,
+                    config=window_config,
+                    )
+            test_dataloader = build_dataloader(
+                    dataset=test_dataset,
+                    config=window_config,
+                    )
+               
+            example_progress = example_progress_bar.add_task('Examples', total=len(test_dataset))
+             
+            eval_model(
+                    model=model,
+                    loss_fn=loss_fn,
+                    dataloader=test_dataloader,
+                    example_progress=example_progress_bar,
+                    examples_done=example_progress,
+                    stream_context=stream_context,
+                    stream_sync=stream_sync,
+                    metric_tracker=metric_tracker,
+                    device=device,
+                    config=config,
+                       )
+            _ = metric_tracker.calc_metrics(
+                logit_store_name='eval_logits',
+                y_store_name='eval_y',
+                prefix='eval'
+            )
+            
+            metrics = metric_tracker.report(
+                    progress_bar=example_progress,
+                    epoch=current_t_start,
+                    )
+            mlflow.log_metrics(
+                    metrics, 
+                    step=current_t_start.year,
+                    timestamp=current_t_start.year,
+                    synchronous=False,
+                               )
+            metric_tracker.clear()
+            example_progress.reset(example_progress, description='Examples ', total=len(test_dataset))
 
-        example_progress.reset(example_progress, description='Examples ', total=len(test_dataset))
-
-        current_t_start = current_t_end 
-        
-        if end_date is not None and current_t_start >= end_date:
-            break
+            current_t_start = current_t_end 
+            if end_date is not None and current_t_start >= end_date:
+                break
 
     # ingest dataset overwrite argument
     # loop over start/end time via interval
