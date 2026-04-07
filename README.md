@@ -46,6 +46,11 @@ Data pre-processing CLI and custom PyTorch Datasets/Loaders forming a flexible E
     - JSON data export for website historical performance graphs
 </details>
 
+<summary><b>v0.4.1 Metric Tracker generalisation</b></summary>
+- Generalise & simplify metric tracker methods/initialisation
+    - Generalised parameter init function & metric calc functions responsive to store name prefix
+</detals>
+
 ## v0.5
 <details>
 <summary><b>v0.5.0 Feature Consolidation (In-Progress)</b></summary>
