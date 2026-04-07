@@ -37,32 +37,58 @@ Data pre-processing CLI and custom PyTorch Datasets/Loaders forming a flexible E
 
 # 2. Road-map
 
-## 0.4 
-<details>
-<summary><b>v0.4.0 Eval CLI (In Progress)</b></summary>
-- CLI app for evaluating models
-    - Config driven with optional CLI overrides 
-    - Temporal scrub with variable intervals and MLflow tracking
-    - JSON data export for website historical performance graphs
+## Completed
+
+<details> 
+<summary> <b>Expand List</b></summary> 
+
+> ## v0.2
+> <details>
+> <summary><b>v0.2.0 Data pre-processing CLI</b></summary>
+>
+> - Standardise data pre-processing notebook into separate functions.
+> - Orchestrate pre-processing functions in main loop.
+> - CLI control via Typer app, functions induced/skipped via option flags.
+>
+> </details>
+
+> ## v0.3
+> <details>
+> <summary><b>v0.3.0 Dataloader Flexibility</b></summary>
+> 
+> - Support concatenation of multiple string/token columns when serving examples from dataloader.
+> 
+> </details>
+
 </details>
 
-<summary><b>v0.4.1 Metric Tracker generalisation</b></summary>
+## v0.4 
+<details>
+<summary><b>v0.4.0 Eval CLI (In Progress)</b></summary>
+
+- CLI app for evaluating models
+- Config driven with optional CLI overrides 
+- Temporal scrub with variable intervals and MLflow tracking
+- JSON data export for website historical performance graphs
+
+</details>
+
+<details>
+<summary><b>v0.4.1 Metric Tracker Generalisation (In Progress)</b></summary>
+
 - Generalise & simplify metric tracker methods/initialisation
-    - Generalised parameter init function & metric calc functions responsive to store name prefix
-</detals>
+- Generalised parameter init function & metric calc functions responsive to store name prefix
+
+</details>
 
 ## v0.5
 <details>
 <summary><b>v0.5.0 Feature Consolidation (In-Progress)</b></summary>
 
 - Move code-as-config module from root to src, allow config value overrides from CLI via option flags
-
 - Refactor train (main) loop into /apps
-
 - Create metric tracker base class for tracking logic, overide metric calculation in children 
-
 - Seperate train/data/env configs into distinct files
-
 - Add dedicated loss/optimisation config for lr schedule milestones etc.
 
 </details>
@@ -80,10 +106,7 @@ Data pre-processing CLI and custom PyTorch Datasets/Loaders forming a flexible E
 <summary><b>v1.0.0 Full experiment suite (Planned)</b></summary>
 
 - Refactor src module imports as relative to /src, standardise cli access via pyproject.toml build parameters
-
-
 - MLflow run management with automatic name creation, CLI driven checkpoint loading with MLflow child run assignment 
-
 - Automated Hyper parameter search logic, with MLflow parent/child assignment
 
 </details>
