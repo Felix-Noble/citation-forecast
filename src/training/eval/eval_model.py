@@ -36,5 +36,5 @@ def eval_model(
 
             metric_tracker.log_metric('test_loss', loss_cpu, X.shape[0])
             metric_tracker.log_metric('test_sigma', sigma_cpu, X.shape[0])
-            metric_tracker.process_values((logits.detach(), ), ('test_logits', ))
+            metric_tracker.process_values((logits.detach(), probs.detach()), ('test_logits', 'test_probs'))
             example_progress.update(examples_done, advance=config.train.batch_size)

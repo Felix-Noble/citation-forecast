@@ -1,4 +1,4 @@
-from .oned_distribution_tracker import OneDDistributionTracker
+from .metric_tracker import MetricTracker 
 from typing import NamedTuple, override
 from dataclasses import dataclass
 import numpy as np
@@ -33,7 +33,7 @@ class MetricTuple(NamedTuple):
     score: float
     weight: float
     
-class ClassificationTracker(OneDDistributionTracker):
+class ClassificationTracker(MetricTracker):
     """
         Classification Metrics Tracker:
 
@@ -47,27 +47,21 @@ class ClassificationTracker(OneDDistributionTracker):
 """
     @override
     def calc_metrics(self, 
-                logit_store_name: str,
-                y_store_name: str,
                 prefix: str = "",
                 ) -> None:
-        logits = self._gather_store(store_name=logit_store_name)
+        logits = self._gather_store(store_name=f'{prefix}_logits')
+        probs = self._gather_store(store_name=f'{prefix}_probs')
+        y_true = self._gather_store(store_name=f'{prefix}_y')
 
         if config.model.n_out == 1:
             # binary case 
-            probs = torch.nn.functional.sigmoid(logits)
             preds = torch.zeros_like(probs)
             preds[probs > 0.5] = 1
         else:
-            probs = torch.softmax(
-                logits,
-                dim=1,
-            )
             preds = torch.argmax(
                 probs,
                 dim=1,
             ).squeeze(-1)
-        y_true = self._gather_store(store_name=y_store_name)
 
         if logits.size(0) != y_true.size(0):
             logger.error(f'Different n. examples in logits and y_true: logits shape: {logits.shape}, y_true shape:{y_true.shape}')

@@ -12,7 +12,7 @@ from src.builders import \
 from src.data import PortionSampler
 from .eval import eval_model
 from .callbacks import isnan_async
-from .tracking import OneDDistributionTracker, ClassificationTracker, log_params, log_lrs
+from .tracking import MetricTracker, ClassificationTracker, log_params, log_lrs
 
 import torch
 import os
@@ -154,7 +154,7 @@ def main(
 
                 metric_tracker.log_metric('train_loss', loss_cpu, X.shape[0])
                 metric_tracker.log_metric('train_sigma', sigma_cpu, X.shape[0])
-                metric_tracker.process_values((logits.detach(), ), ('train_logits', ))
+                metric_tracker.process_values((logits.detach(), probs.detach()), ('train_logits', 'train_probs'))
                 executor.submit(isnan_async, loss_cpu, logger)
                 mlflow.log_metric('train_loss-batch', loss_cpu, synchronous=False, step=int((epoch-1) * examples_per_epoch + batch_i * config.train.batch_size))
 
@@ -185,14 +185,10 @@ def main(
                     device=device,
                         )
                 _ = metric_tracker.calc_metrics(
-                    logit_store_name='test_logits',
-                    y_store_name='test_y',
                     prefix='test'
                 )
 
             _ = metric_tracker.calc_metrics(
-                logit_store_name='train_logits',
-                y_store_name='train_y',
                 prefix='train'
             )
             metrics = metric_tracker.report(
