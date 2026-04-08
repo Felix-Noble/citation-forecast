@@ -2,15 +2,17 @@ from config import Config, config
 from src.training.tracking import ClassificationTracker
 from src.training.tracking.classification_tracker import StoreParams
 import torch
+
 def build_eval_tracker(
         device: torch.device,
         dtype: torch.dtype,
         config: Config = config
                   ) -> ClassificationTracker:
        param_tuple = (
-            build_tracker_params(name='eval_logits', device=device),
-            build_tracker_params(name='eval_y', device=torch.device('cpu')),
-            build_tracker_params(name='eval_loss', device=device),
+            build_tracker_params(name='test_logits', device=device),
+            build_tracker_params(name='test_probs', device=device),
+            build_tracker_params(name='test_y', device=torch.device('cpu')),
+            build_tracker_params(name='test_loss', device=device),
                ) 
        metric_tracker = ClassificationTracker(
                 param_tuple,
@@ -27,9 +29,12 @@ def build_train_tracker(
                   ) -> ClassificationTracker:
     param_tuple = (
             build_tracker_params(name='train_logits', device=device),
+            build_tracker_params(name='train_probs', device=device),
             build_tracker_params(name='train_y', device=torch.device('cpu')),
             build_tracker_params(name='train_loss', device=device),
+
             build_tracker_params(name='test_logits', device=device),
+            build_tracker_params(name='test_probs', device=device),
             build_tracker_params(name='test_y', device=torch.device('cpu')),
             build_tracker_params(name='test_loss', device=device),
             )

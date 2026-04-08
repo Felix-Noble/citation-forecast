@@ -38,7 +38,7 @@ class MetricTuple(NamedTuple):
     score: float
     weight: float
     
-class OneDDistributionTracker:
+class MetricTracker:
     """
         Classification Metrics Tracker:
 
@@ -172,12 +172,10 @@ class OneDDistributionTracker:
         self.metric_store[name].append(MetricTuple(value, weight))
 
     def calc_metrics(self, 
-                logit_store_name: str,
-                y_store_name: str,
                 prefix: str = "",
                 ) -> None:
         try:
-            head_out = self._gather_store(store_name=logit_store_name)
+            head_out = self._gather_store(store_name=f'{prefix}_logits')
             
             logits, sigma = head_out[:, :-1], head_out[:, -1]
             sigma = torch.nn.functional.softplus(sigma)
@@ -189,7 +187,7 @@ class OneDDistributionTracker:
                 dim=-1,
             ).unsqueeze(-1)
 
-            y_true_one_hot = self._gather_store(store_name=y_store_name)
+            y_true_one_hot = self._gather_store(store_name=f'{prefix}_y')
 
             y_true_smoothed = WassersteinEntropyLoss.smooth_one_hot(y_true_one_hot, sigma)
             y_true = torch.argmax(

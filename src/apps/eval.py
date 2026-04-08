@@ -10,7 +10,8 @@ from src.builders import \
         build_loss \
 
 from src.training.eval import eval_model
-from src.training.tracking import OneDDistributionTracker, ClassificationTracker, log_params, log_lrs
+from src.training.tracking import MetricTracker, ClassificationTracker, log_params, log_lrs
+import logging
 from logging import getLogger
 import copy
 from contextlib import nullcontext
@@ -123,6 +124,8 @@ def main(
     window_progress_bar = build_epoch_progress()
     example_progress_bar = build_eval_example_progress()
     loss_fn = build_loss()
+    import warnings 
+    warnings.filterwarnings('ignore')
 
     ## Initialise PyTorch
     import torch
@@ -130,6 +133,8 @@ def main(
     stream = torch.cuda.Stream() if torch.cuda.is_available() else None
     stream_context = torch.cuda.stream(stream) if torch.cuda.is_available() else nullcontext()
     stream_sync = torch.cuda.synchronize if torch.cuda.is_available() else lambda : None
+    import torch._logging
+    torch._logging.set_logs(all=logging.ERROR)
 
     metric_tracker = build_eval_tracker(device=torch.device('cpu'), dtype=torch.float32)
 
@@ -186,7 +191,7 @@ def main(
     current_t_start: datetime = start_date
     with mlflow.start_run(run_name=f'{start_date.year}\
                                     -{interval}\
-                                    -{end_date if end_date is not None else ':'}\
+                                    -{end_date.year if end_date is not None else ':'}\
                                     --{run_id}'):
         param_dict = {
                 'run_id': run_id,
@@ -237,13 +242,11 @@ def main(
                     config=config,
                        )
             _ = metric_tracker.calc_metrics(
-                logit_store_name='eval_logits',
-                y_store_name='eval_y',
-                prefix='eval'
+                prefix='test'
             )
             
             metrics = metric_tracker.report(
-                    progress_bar=example_progress,
+                    progress_bar=example_progress_bar,
                     epoch=current_t_start,
                     )
             mlflow.log_metrics(
@@ -253,7 +256,7 @@ def main(
                     synchronous=False,
                                )
             metric_tracker.clear()
-            example_progress.reset(example_progress, description='Examples ', total=len(test_dataset))
+            example_progress_bar.reset(example_progress, description='Examples ', total=len(test_dataset))
 
             current_t_start = current_t_end 
             if end_date is not None and current_t_start >= end_date:
