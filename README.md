@@ -60,28 +60,29 @@ Data pre-processing CLI and custom PyTorch Datasets/Loaders forming a flexible E
 > 
 > </details>
 
+
+> ## v0.4 
+> <details>
+> <summary><b>v0.4.0 Eval CLI</b></summary>
+> 
+> - CLI app for evaluating models
+> - Config driven with optional CLI overrides 
+> - Temporal scrub with variable intervals and MLflow tracking
+> - JSON data export for website historical performance graphs
+> 
+> </details>
+> 
+> <details>
+> <summary><b>v0.4.1 Metric Tracker Generalisation</b></summary>
+> 
+> - Generalise & simplify metric tracker methods/initialisation
+> - Generalised parameter init function & metric calc functions responsive to store name prefix
+> 
+> </details>
+
 </details>
 
-## v0.4 
-<details>
-<summary><b>v0.4.0 Eval CLI (In Progress)</b></summary>
-
-- CLI app for evaluating models
-- Config driven with optional CLI overrides 
-- Temporal scrub with variable intervals and MLflow tracking
-- JSON data export for website historical performance graphs
-
-</details>
-
-<details>
-<summary><b>v0.4.1 Metric Tracker Generalisation (In Progress)</b></summary>
-
-- Generalise & simplify metric tracker methods/initialisation
-- Generalised parameter init function & metric calc functions responsive to store name prefix
-
-</details>
-
-## v0.6
+## v0.5
 <details>
 <summary><b>v0.5.0 Feature Consolidation (In-Progress)</b></summary>
 
