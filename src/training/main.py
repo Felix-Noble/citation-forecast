@@ -5,7 +5,7 @@ from src.builders import \
         build_progress_bars, \
         build_lr_scheduler, \
         build_dataloader, \
-        build_tracker, \
+        build_train_tracker, \
         build_model, \
         build_loss, \
         build_optimizer
@@ -20,10 +20,12 @@ import typer
 from contextlib import nullcontext
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
+import warnings
 from logging import getLogger
 
 logger = getLogger(Path(__file__).stem)
 _ = setup_logger(logger, config.logging)
+warnings.filterwarnings('ignore')
 
 app = typer.Typer(pretty_exceptions_enable=False)
 
@@ -83,7 +85,7 @@ def main(
         lr = config.train.lr,
         weight_decay = config.train.weight_decay,
     )
-    metric_tracker = build_tracker(
+    metric_tracker = build_train_tracker(
         dtype=torch.float32,
         device=device,
             )
@@ -110,8 +112,7 @@ def main(
 
     ( epoch_progress, 
       example_progress, 
-      eval_example_progress, 
-      mem_util_progress ) = build_progress_bars(disable = not progress) 
+      eval_example_progress,) = build_progress_bars(disable = not progress) 
 
     epochs_done = epoch_progress.add_task('Epochs', total=config.train.epochs)
     examples_done = example_progress.add_task('Train Examples', total=len(train_dataloader) * config.train.batch_size)
