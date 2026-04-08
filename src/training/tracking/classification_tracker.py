@@ -2,7 +2,7 @@ from .metric_tracker import MetricTracker
 from typing import NamedTuple, override
 from dataclasses import dataclass
 import numpy as np
-from sklearn.metrics import roc_auc_score, precision_recall_curve, auc, balanced_accuracy_score, mean_absolute_error # pyright: ignore[reportUnknownVariableType, reportMissingTypeStubs] 
+from sklearn.metrics import roc_auc_score, precision_recall_curve, auc, balanced_accuracy_score, precision_score, recall_score, mean_absolute_error # pyright: ignore[reportUnknownVariableType, reportMissingTypeStubs] 
 import torch
 from pathlib import Path
 from logging import getLogger
@@ -86,6 +86,16 @@ class ClassificationTracker(MetricTracker):
                 multi_class='ovo', 
                 average='weighted')
             self.log_metric(f'{prefix}_roc_auc', roc_auc, probs.shape[0]) # pyright: ignore[reportArgumentType]
+        except Exception as e:
+            logger.error(e)
+        try:
+            recall = recall_score(y_true.long().numpy(), preds.numpy())
+            self.log_metric(f'{prefix}_recall', recall, probs.shape[0])
+        except Exception as e:
+            logger.error(e)
+        try:
+            precision = precision_score(y_true.long().numpy(), preds.numpy())
+            self.log_metric(f'{prefix}_precision', precision, preds.shape[0])
         except Exception as e:
             logger.error(e)
 

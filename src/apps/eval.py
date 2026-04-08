@@ -189,7 +189,8 @@ def main(
     logger.info(f'Starting temporal iteration: from ... to... interval...') 
 
     current_t_start: datetime = start_date
-    with mlflow.start_run(run_name=f'{start_date.year}\
+    with mlflow.start_run(run_name=f'{DATASET}\
+                                    -{start_date.year}\
                                     -{interval}\
                                     -{end_date.year if end_date is not None else ':'}\
                                     --{run_id}'):
