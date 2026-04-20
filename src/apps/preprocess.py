@@ -102,12 +102,12 @@ def main(
         ),
     start_date: datetime | None = typer.Option(
             None,
-            '--start-date',
+            '--start-date', '-sd',
             help = 'Start date to filter by, inclusive'
             ),
     end_date: datetime | None = typer.Option(
             None,
-            '--end-date',
+            '--end-date', '-ed',
             help = 'End date to filter by, exclusive'
             ),
     field_id: list[int] = typer.Option(
