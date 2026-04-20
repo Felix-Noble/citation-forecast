@@ -196,6 +196,9 @@ def main(
                                     --{run_id}'):
         param_dict = {
                 'run_id': run_id,
+                'model_name': model_name,
+                'epoch': epoch,
+                'dataset': DATASET,
                 'start_date': start_date,
                 'end_date': end_date,
                 'interval': interval,
