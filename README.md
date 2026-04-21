@@ -82,6 +82,23 @@ Data pre-processing CLI and custom PyTorch Datasets/Loaders forming a flexible E
 
 </details>
 
+<details>
+<summary><b>v0.4.2 Standardise cross-app arg parsing</b></summary>
+
+- Standardise start/end date arg parsing across apps
+- Add config/env value overrides to train app
+
+</details>
+
+<details>
+<summary><b>v0.4.3 Update data loading & handling</b></summary>
+
+- Add no. of examples in dataset to train/eval metric/param logging 
+- Specialised dataset load funcs, more efficient mem use
+- Ignore extra cols (e.g index) during parquet data load
+
+</details>
+
 ## v0.5
 <details>
 <summary><b>v0.5.0 Feature Consolidation (In-Progress)</b></summary>
