@@ -2,7 +2,8 @@ import torch
 from datetime import datetime
 from dataclasses import dataclass
 
-top_k = tuple(300 for _ in range(12))
+max_len = 500
+top_k = tuple(max_len for _ in range(8))
 #top_k = (*top_k, 128, 128, 128, 128)
 n_layers = len(top_k)
 selector_heads = tuple(1 for _ in range(n_layers))
@@ -25,7 +26,7 @@ class ModelConfig:
     selector_heads: tuple[int, ...] = selector_heads
     process_heads: tuple[int, ...] = process_heads
     n_layers: int = n_layers
-    max_len: int = 300
+    max_len: int = max_len
     embed_dim: int = 16
     hidden_dim: int = 32
     n_out: int = 1
@@ -38,28 +39,28 @@ class TrainConfig:
     batch_size: int = 1024
     grad_accumulation_steps: int = 50 # n batches until optimizer steps
     lr: float = 1e-3
-    lr_milestones: tuple[int, ...] = (40, 80)
+    lr_milestones: tuple[int, ...] = (20, 90)
     weight_decay: float = 0.05
     optimizer: str = 'AdamW'
     loss_fn: str = 'BinaryCrossEntropyLoss'
     loss: LossConfig = LossConfig()
     eval_interval: int = 1
-    checkpoint_interval: int = 3
-    shuffle: bool = False
-    sample: int | None = (2048) * 415 
+    checkpoint_interval: int = 1
+    shuffle: bool = True
+    sample: int | None = None
     mat_mul_precision: str = 'high'
-    dataset: str = 'social-sciences'
-    train_start: datetime = datetime(2010, 1, 1)
-    train_end: datetime = datetime(2015, 1, 1)
-    test_start: datetime = datetime(2015, 1, 1)
-    test_end: datetime = datetime(2016, 1, 1)
+    dataset: str = 'all-15-27'
+    train_start: datetime = datetime(2015, 1, 1)
+    train_end: datetime = datetime(2020, 1, 1)
+    test_start: datetime = datetime(2020, 1, 1)
+    test_end: datetime = datetime(2021, 1, 1)
 
 @dataclass(frozen=True)
 class LogConfig:
     file: str = 'ERROR'
     console: str = 'DEBUG'
 
-@dataclass(frozen=True)
+@dataclass(frozen=False)
 class Config:
     model: ModelConfig = ModelConfig() 
     train: TrainConfig = TrainConfig()
