@@ -1,3 +1,4 @@
+from ._registry import model_registry
 from pydantic import BaseModel, PositiveInt, PositiveFloat
 import torch
 from torch import Tensor
@@ -163,6 +164,7 @@ class HAttnBlock(nn.Module):
 
         return out, mask
 
+@model_registry
 class H_R_Smooth(nn.Module):
     """ Heirarchical recurrent attention with target smoothing"""
     config_schema = ModelConfig
