@@ -17,8 +17,9 @@ image = (
     image=image,
     max_containers=1,
     timeout=5,
-    target_inputs=50,
-    max_inputs=1000,
+    allow_concurrent_inputs=100,
+    enable_memory_snapshot=True,
+    experimental_options={"enable_gpu_snapshot": True},
     volumes={
         '/weights': weights_volume,
         '/tokenizer': tokenizer_volume
@@ -26,7 +27,6 @@ image = (
 )
 
 class GPUInference:
-
     @modal.enter()
     def setup(self):
         # Model
