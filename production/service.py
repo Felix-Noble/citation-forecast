@@ -43,17 +43,14 @@ class InferenceWrapper:
         print('Model Loaded')
         # Tokenizer
         from transformers import AutoTokenizer
-        tokenizer_name = 'openai/gpt-oss-120b'
-        tokenizer_path ='/tokenizer/openai-gpt-oss-120b'
-        if os.path.exists(f'/tokenizer/{tokenizer_path}'):
+        tokenizer_path ='/tokenizer'
+        if os.path.exists('/tokenizer'):
             print('Loading tokeniser from volume')
             self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_path)
-        else:
-            print('Installing tokeniser')
-            self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
             self.tokenizer.pad_token_id = 0
-            self.tokenizer.save_pretrained(tokenizer_path)
-            tokenizer_volume.commit() 
+        else:
+            print('Tokenizer not found')
+            print(os.listdir('/tokenizer'))
 
     @modal.batched(max_batch_size=4, wait_ms=500)
     def process_request(self, prompt: list[str] | list[list[str]]):
