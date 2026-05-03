@@ -17,7 +17,6 @@ image = (
     image=image,
     max_containers=1,
     timeout=5,
-    allow_concurrent_inputs=100,
     enable_memory_snapshot=True,
     experimental_options={"enable_gpu_snapshot": True},
     volumes={
@@ -27,7 +26,7 @@ image = (
 )
 
 class GPUInference:
-    @modal.enter()
+    @modal.enter(snap=True)
     def setup(self):
         # Model
         
@@ -92,10 +91,11 @@ class GPUInference:
             raise e
             return [str(e) for _ in range(len(prompt))]
 
-    @modal.fastapi_endpoint(method="POST", requires_proxy_auth=True)
-    async def handle_request(self, data: dict):
-        # This creates an instance of the class and calls the batched method
-        # Modal automatically groups these calls into 'handle_batch'
-        probOnePlus = self._batch_inference([data["promptStr"]])
-        return {"probOnePlus": probOnePlus}
+@modal.fastapi_endpoint(method="POST", requires_proxy_auth=True)
+@modal.concurrent(max_inputs=1000)
+async def handle_request(self, data: dict):
+    # This creates an instance of the class and calls the batched method
+    # Modal automatically groups these calls into 'handle_batch'
+    probOnePlus = self._batch_inference([data["promptStr"]])
+    return {"probOnePlus": probOnePlus}
 
