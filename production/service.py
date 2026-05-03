@@ -13,17 +13,20 @@ image = (
 )
 
 @app.cls(
+    gpu="T4",
     image=image,
     max_containers=1,
-    timeout=120,
-    gpu="T4",
+    timeout=5,
+    target_inputs=50,
+    max_inputs=1000,
     volumes={
         '/weights': weights_volume,
         '/tokenizer': tokenizer_volume
     }
 )
 
-class InferenceWrapper:
+class GPUInference:
+
     @modal.enter()
     def setup(self):
         # Model
@@ -52,8 +55,8 @@ class InferenceWrapper:
             print('Tokenizer not found')
             print(os.listdir('/tokenizer'))
 
-    @modal.batched(max_batch_size=4, wait_ms=500)
-    def process_request(self, prompt: list[str] | list[list[str]]):
+    @modal.batched(max_batch_size=4, wait_ms=200)
+    def _batch_inference(self, prompt: list[str] | list[list[str]]):
         if isinstance(prompt[0], list):
             print('Unwrapping prompt')
             unwrapped = []
@@ -89,15 +92,10 @@ class InferenceWrapper:
             raise e
             return [str(e) for _ in range(len(prompt))]
 
-@app.function(
-    image=image,
-    max_containers=1,
-    timeout=120,
-)
-@modal.fastapi_endpoint(method="POST", requires_proxy_auth=True)
-async def predict(data: dict):
-    # This creates an instance of the class and calls the batched method
-    # Modal automatically groups these calls into 'handle_batch'
-    instance = InferenceWrapper()
-    probs = instance.process_request.remote([data["promptStr"]])
-    return {"probs": probs}
+    @modal.fastapi_endpoint(method="POST", requires_proxy_auth=True)
+    async def handle_request(self, data: dict):
+        # This creates an instance of the class and calls the batched method
+        # Modal automatically groups these calls into 'handle_batch'
+        probOnePlus = self._batch_inference([data["promptStr"]])
+        return {"probOnePlus": probOnePlus}
+
