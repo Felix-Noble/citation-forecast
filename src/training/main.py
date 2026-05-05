@@ -1,7 +1,6 @@
 from config import config, env
 from src.utils.logging import setup_logger
 from src.builders import \
-        build_datasets, \
         build_progress_bars, \
         build_lr_scheduler, \
         build_dataloader, \
@@ -9,7 +8,8 @@ from src.builders import \
         build_model, \
         build_loss, \
         build_optimizer
-from src.data import PortionSampler
+from src.data import PortionSampler 
+from src.data.datasets import BinaryCategoricalDataset, OrdinalDataset
 from .eval import eval_model
 from .callbacks import isnan_async
 from .tracking import MetricTracker, ClassificationTracker, log_params, log_lrs
@@ -91,7 +91,30 @@ def main(
             )
 
     scheduler = build_lr_scheduler(optimizer)
-    train_dataset, test_dataset = build_datasets(dataset=config.train.dataset, dry_run=dry_run)
+
+    train_dataset = BinaryCategoricalDataset(
+        data_path=str(env.STAGED_LOC / config.train.dataset),
+        X=['title_tokens', 'abstract_tokens'],
+        y=['cited_by_count'],
+        t_start=config.train.train_start.toordinal(),
+        t_end=config.train.train_end.toordinal(),
+        config=config,
+        return_mask=True,
+        pad=True,
+        dry_run=dry_run,
+    )
+
+    test_dataset = BinaryCategoricalDataset(
+        data_path=str(env.STAGED_LOC / config.train.dataset),
+        X=['title_tokens', 'abstract_tokens'],
+        y=['cited_by_count'],
+        t_start=config.train.test_start.toordinal(),
+        t_end=config.train.test_end.toordinal(),
+        config=config,
+        return_mask=True,
+        pad=True,
+        dry_run=dry_run,
+    )
 
     examples_per_epoch = len(train_dataset) # update this for when sampling is introduced
     train_sampler = None

@@ -2,66 +2,49 @@
 from src.data.datasets import OrdinalDataset, BinaryCategoricalDataset
 from config import Config, config, env
 
-def build_binary_datasets(
+def build_binary_dataset(
         dataset: str,
-        dry_run: bool, 
+        x: list[str],
+        y: str,
+        mask: bool = True,
+        pad: bool = False,
+        dry_run: bool = False, 
         config: Config = config,
         ):
 
-    train_dataset = BinaryCategoricalDataset(
+    dataset = BinaryCategoricalDataset(
         data_path=str(env.STAGED_LOC / dataset),
-        X=['title_tokens', 'abstract_tokens'],
-        y='cited_by_count',
+        X=x,
+        y=y,
         t_start=config.train.train_start.toordinal(),
         t_end=config.train.train_end.toordinal(),
         config=config,
-        return_mask=True,
-        pad=True,
+        return_mask=mask,
+        pad=pad,
         dry_run=dry_run,
     )
 
-    test_dataset = BinaryCategoricalDataset(
-        data_path=str(env.STAGED_LOC / dataset),
-        X=['title_tokens', 'abstract_tokens'],
-        y='cited_by_count',
-        t_start=config.train.test_start.toordinal(),
-        t_end=config.train.test_end.toordinal(),
-        config=config,
-        return_mask=True,
-        pad=True,
-        dry_run=dry_run
-    )
-    
-    return train_dataset, test_dataset
+    return dataset
 
-def build_ordinal_datasets(
+def build_ordinal_dataset(
         dataset: str,
-        dry_run: bool, 
+        x: list[str],
+        y: str,
+        mask: bool = True,
+        pad: bool = False,
+        dry_run: bool = False, 
         config: Config = config,
         ):
-
-    train_dataset = OrdinalDataset(
+    dataset = OrdinalDataset(
         data_path=str(env.STAGED_LOC / dataset),
-        X='abstract_tokens',
-        y='citation_normalized_percentile',
+        X=x,
+        y=y,
         t_start=config.train.train_start.toordinal(),
         t_end=config.train.train_end.toordinal(),
         config=config,
-        pad=True,
-        return_mask=True,
+        pad=pad,
+        return_mask=mask,
         dry_run=dry_run
     )
 
-    test_dataset = OrdinalDataset(
-        data_path=str(env.STAGED_LOC / dataset),
-        X='abstract_tokens',
-        y='citation_normalized_percentile',
-        t_start=config.train.test_start.toordinal(),
-        t_end=config.train.test_end.toordinal(),
-        config=config,
-        pad=True,
-        return_mask=True,
-        dry_run=dry_run
-    )
-    
-    return train_dataset, test_dataset
+    return dataset

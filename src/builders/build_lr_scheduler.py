@@ -22,7 +22,7 @@ def build_lr_scheduler(
 
     cosine_oscilating_scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
         optimizer,
-        T_0=10,
+        T_0=20,
         T_mult=1,
         eta_min=config.train.lr * 0.6,
         last_epoch=-1, # Used to implement restart from checkpoint
