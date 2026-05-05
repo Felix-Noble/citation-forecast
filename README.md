@@ -99,9 +99,16 @@ Data pre-processing CLI and custom PyTorch Datasets/Loaders forming a flexible E
 
 </details>
 
+<details>
+<summary><b>v0.4.4 Enhanced Metric calculation</b></summary>
+
+- Add 'best threshold' metric calculation for accuracy, precision, & recall
+
+</details>
+
 ## v0.5
 <details>
-<summary><b>v0.5.0 Feature Consolidation (In-Progress)</b></summary>
+<summary><b>v0.5.0 Feature Consolidation</b></summary>
 
 - Move code-as-config module from root to src, allow config value overrides from CLI via option flags
 - Refactor train (main) loop into /apps
