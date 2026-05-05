@@ -9,6 +9,7 @@ from src.builders import \
         build_model, \
         build_loss \
 
+from src.data.datasets import BinaryCategoricalDataset, OrdinalDataset
 from src.training.eval import eval_model
 from src.training.tracking import MetricTracker, ClassificationTracker, log_params, log_lrs
 import logging
@@ -220,12 +221,18 @@ def main(
             window_config_args['test_start']  = current_t_start
             window_config_args['test_end']  = current_t_end
             window_config.train = TrainConfig(**window_config_args)
-
-            _, test_dataset = build_datasets(
-                    dataset=DATASET,
+            test_dataset = BinaryCategoricalDataset(
+                    data_path=str(env.STAGED_LOC / dataset),
+                    X=['title_tokens', 'abstract_tokens'],
+                    y=['cited_by_count'],
+                    t_start=config.train.test_start.toordinal(),
+                    t_end=config.train.test_end.toordinal(),
+                    config=config,
+                    return_mask=True,
+                    pad=True,
                     dry_run=dry_run,
-                    config=window_config,
                     )
+
             test_dataloader = build_dataloader(
                     dataset=test_dataset,
                     config=window_config,
