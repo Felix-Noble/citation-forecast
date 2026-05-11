@@ -60,27 +60,33 @@ class Filter:
 
 def main(
         lf: pl.LazyFrame,
-        columns: list[str],
-        min_lens: dict[str, int] = {'abstract': 300}
+        col: str,
+        min_len:  int,
+        level: int = 1, #low=1 medium=2 high=3
     ):
-     
-    for col in columns:
-        # std filtering
+    ## LOW 
+    # content contains filtering
+    lf = lf.filter(~pl.col(col).str.contains_any(Filter.exclude))
+    
+    ## MEDIUM
+    if level > 1:
+    # std filtering
         lf = lf.with_columns(
-            pl.col('abstract').str.len_chars().alias('abstract_len')
+            pl.col(col).str.len_chars().alias(f'{col}_len')
         )
         stats = lf.select(f'{col}_len').collect(engine='streaming')
         mean: float = stats[f'{col}_len'].mean()
         std: float = stats[f'{col}_len'].std()
         high: float = mean + (std * 3)  
-        low: float = max(mean - (std * 3), min_lens.get(col, 0))
+        low: float = max(mean - (std * 3), min_len)
         lf = lf.filter(
             (pl.col(f'{col}_len') > low) & pl.col(f'{col}_len') < high
         )
         lf = lf.drop(f'{col}_len')
-   
-        # content filtering
-        lf = lf.filter(~pl.col(col).str.contains_any(Filter.exclude))
+
+    ## HIGH
+    # content ends filtering 
+    if level > 2:
         lf = lf.filter(pl.col(col).str.ends_with('.'))
-    
+
     return lf
