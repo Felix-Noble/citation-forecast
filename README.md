@@ -86,7 +86,6 @@ Data pre-processing CLI and custom PyTorch Datasets/Loaders forming a flexible E
 <summary><b>v0.4.2 Standardise cross-app arg parsing</b></summary>
 
 - Standardise start/end date arg parsing across apps
-- Add config/env value overrides to train app
 
 </details>
 
@@ -103,6 +102,16 @@ Data pre-processing CLI and custom PyTorch Datasets/Loaders forming a flexible E
 <summary><b>v0.4.4 Enhanced Metric calculation</b></summary>
 
 - Add 'best threshold' metric calculation for accuracy, precision, & recall
+
+</details>
+
+<details>
+<summary><b>v0.4.5 Preprocess & Train app upgrade</b></summary>
+
+- Add config/env value overrides to train app
+- Add metadata export, drop count logging, more user warnings, to pre-processing 
+- Cleaning has more granular control with column specific 'levels', tidied argument names
+- Pre-processing sped up by partitioning via filter instead of slicing
 
 </details>
 
