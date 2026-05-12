@@ -113,15 +113,15 @@ Data pre-processing CLI and custom PyTorch Datasets/Loaders forming a flexible E
 - Add metadata export, drop count logging, more user warnings, to pre-processing 
 - Cleaning has more granular control with column specific 'levels', tidied argument names
 - Pre-processing sped up by partitioning via filter instead of slicing
-- Add config/env value overrides to train app
 - Log model file as mlflow arifact 
 
 </details>
 
 ## v0.5
 <details>
-<summary><b>v0.5.0 Feature Consolidation</b></summary>
+<summary><b>v0.5.0 CLI & Config Consolidation</b></summary>
 
+- Add config/env value overrides to train app
 - Move code-as-config module from root to src, allow config value overrides from CLI via option flags
 - Refactor train (main) loop into /apps
 - Create metric tracker base class for tracking logic, overide metric calculation in children 
