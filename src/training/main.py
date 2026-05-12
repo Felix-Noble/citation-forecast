@@ -210,18 +210,20 @@ def main(
                     device=device,
                         )
                 _ = metric_tracker.calc_metrics(
-                    prefix='test'
+                    prefix='test',
+                    step=epoch,
                 )
 
             _ = metric_tracker.calc_metrics(
-                prefix='train'
+                prefix='train',
+                step=epoch,
             )
             metrics = metric_tracker.report(
                 progress_bar=epoch_progress, 
                 epoch=epoch,
             )
             mlflow.log_metrics(metrics, step = epoch, synchronous=False)
-
+            
             epoch_progress.update(epochs_done, advance=1)
 
             metric_tracker.clear()

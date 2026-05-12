@@ -7,6 +7,9 @@ import pandas as pd
 from rich.table import Table
 from rich.console import Console
 from sklearn.metrics import roc_auc_score, precision_score, recall_score, balanced_accuracy_score, mean_absolute_error # pyright: ignore[reportUnknownVariableType, reportMissingTypeStubs] 
+from sklearn.metrics import RocCurveDisplay, PrecisionRecallDisplay
+import mlflow
+import numpy as np
 import math
 import torch
 from pathlib import Path
@@ -54,12 +57,14 @@ class MetricTracker:
                 store_params: tuple[StoreParams, ...],
                 dtype: torch.dtype,
                 device: torch.device,
+                export: bool = True,
                 buffer: bool = False,
                  ):
 
         self.dtype = dtype
         self.device: torch.device = device
         self.buffer = buffer
+        self.export = export
         self.store_params: dict[str, StoreParams] = {params.name: params for params in store_params}
         self.stores: dict[str, Store] = {params.name: self._init_store(params) for params in store_params}
         
@@ -171,11 +176,36 @@ class MetricTracker:
             self.metric_store[name] = []
         self.metric_store[name].append(MetricTuple(value, weight))
 
+    def _export_plots(self, 
+                      prefix: str, 
+                      y_true: np.ndarray,
+                      probs: np.ndarray,
+                      step: int,
+                      ) -> None:
+        try:
+            roc_plot = RocCurveDisplay.from_predictions(
+                    y_true.long().numpy(),
+                    probs.numpy()
+                    ) 
+            mlflow.log_figure(roc_plot.figure_, f"{prefix}-plots/ROC/roc_curve-step-{step}.png", save_kwargs={'dpi': 72})
+        except Exception as e:
+            logger.error(e)
+
+        try:
+            pr_plot = PrecisionRecallDisplay.from_predictions(
+                    y_true.long().numpy(),
+                    probs.numpy(),
+                    plot_chance_level=True,
+                    ) 
+            mlflow.log_figure(pr_plot.figure_, f"{prefix}-plots/PR/pr_curve-step-{step}.png", save_kwargs={'dpi': 72})
+        except Exception as e:
+            logger.error(e)
+
     def calc_metrics(self, 
                 prefix: str = "",
                 ) -> None:
         try:
-            head_out = self._gather_store(store_name=f'{prefix}_logits')
+            self.head_out = self._gather_store(store_name=f'{prefix}_logits')
             
             logits, sigma = head_out[:, :-1], head_out[:, -1]
             sigma = torch.nn.functional.softplus(sigma)

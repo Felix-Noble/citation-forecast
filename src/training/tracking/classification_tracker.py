@@ -1,7 +1,7 @@
 from .metric_tracker import MetricTracker 
 from typing import NamedTuple, override
 from dataclasses import dataclass
-from sklearn.metrics import roc_auc_score, precision_recall_curve, auc, balanced_accuracy_score, precision_score, recall_score, mean_absolute_error # pyright: ignore[reportUnknownVariableType, reportMissingTypeStubs] 
+from sklearn.metrics import roc_auc_score, average_precision_score, balanced_accuracy_score, precision_score, recall_score, mean_absolute_error # pyright: ignore[reportUnknownVariableType, reportMissingTypeStubs] 
 import torch
 import numpy as np
 from pathlib import Path
@@ -47,12 +47,13 @@ class ClassificationTracker(MetricTracker):
 """
     @override
     def calc_metrics(self, 
-                prefix: str = "",
-                ) -> None:
+                     prefix: str,
+                     step:  int
+                     ) -> None:
         logits = self._gather_store(store_name=f'{prefix}_logits')
         probs = self._gather_store(store_name=f'{prefix}_probs')
         y_true = self._gather_store(store_name=f'{prefix}_y')
-
+        self._export_plots(prefix, y_true, probs, step)
         if logits.size(0) != y_true.size(0):
             logger.error(f'Different n. examples in logits and y_true: logits shape: {logits.shape}, y_true shape:{y_true.shape}')
             return
@@ -72,14 +73,9 @@ class ClassificationTracker(MetricTracker):
             self.log_metric(f'{prefix}_roc_auc', roc_auc, n_examples) # pyright: ignore[reportArgumentType]
         except Exception as e:
             logger.error(e)
+ 
         try: 
-            precision, recall, _ = precision_recall_curve(
-                y_true.long().numpy(),
-                probs.numpy(),
-                )
-            precision = np.sort(precision)
-            recall = np.flip(np.sort(recall))
-            pr_auc = auc(precision, recall)
+            pr_auc = average_precision_score(y_true.long().numpy(), probs.numpy())
             self.log_metric(f'{prefix}_PR_AUC', pr_auc, n_examples) # pyright: ignore[reportArgumentType]
         except Exception as e:
             try:
@@ -135,22 +131,15 @@ class ClassificationTracker(MetricTracker):
                 accuracy_scores.append(balanced_accuracy)
                 precision_scores.append(precision)
                 recall_scores.append(recall)
+
             accuracy_scores = np.array(accuracy_scores)
-            precision_scores = np.array(precision_scores)
-            recall_scores = np.array(recall_scores)
-            
+
             high_accuracy_i = np.argmax(accuracy_scores)
-            high_precision_i = np.argmax(precision_scores)
-            high_recall_i = np.argmax(recall_scores)
             
             self.log_metric(f'{prefix}_best_accuracy', accuracy_scores[high_accuracy_i], n_examples) # pyright: ignore[reportArgumentType]
             self.log_metric(f'{prefix}_best_accuracy_theta', thetas[high_accuracy_i], n_examples) # pyright: ignore[reportArgumentType]
-
-            self.log_metric(f'{prefix}_best_precision', precision_scores[high_precision_i], n_examples) # pyright: ignore[reportArgumentType]
-            self.log_metric(f'{prefix}_best_precision_theta', thetas[high_precision_i], n_examples) # pyright: ignore[reportArgumentType]
-
-            self.log_metric(f'{prefix}_best_recall', recall_scores[high_recall_i], n_examples) # pyright: ignore[reportArgumentType]
-            self.log_metric(f'{prefix}_best_recall_theta', thetas[high_recall_i], n_examples) # pyright: ignore[reportArgumentType]
+            self.log_metric(f'{prefix}_best_precision:best_acc', precision_scores[high_accuracy_i], n_examples) # pyright: ignore[reportArgumentType]
+            self.log_metric(f'{prefix}_best_recall:best_acc', recall_scores[high_accuracy_i], n_examples) # pyright: ignore[reportArgumentType]
             
         except Exception as e:
             logger.error(f'theta: {theta} | error: {e}')
