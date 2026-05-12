@@ -19,11 +19,11 @@ def log_params(
 
     param_dict['train_dataset'] = {
             'name': train_dataset_name,
-            'n_examps': len(train_dataset)
+            'n_examps': f'{len(train_dataset):,}'
             }
     param_dict['test_dataset'] = {
             'name': test_dataset_name,
-            'n_examps': len(test_dataset)
+            'n_examps': f'{len(test_dataset):,}'
             }
 
     scheduler_params = _get_scheduler_params(scheduler)
