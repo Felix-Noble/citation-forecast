@@ -253,7 +253,8 @@ def main(
                     config=config,
                        )
             _ = metric_tracker.calc_metrics(
-                prefix='test'
+                prefix='test',
+                step=current_t_start.year,
             )
             
             metrics = metric_tracker.report(

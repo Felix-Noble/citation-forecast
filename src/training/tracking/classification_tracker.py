@@ -138,8 +138,8 @@ class ClassificationTracker(MetricTracker):
             
             self.log_metric(f'{prefix}_best_accuracy', accuracy_scores[high_accuracy_i], n_examples) # pyright: ignore[reportArgumentType]
             self.log_metric(f'{prefix}_best_accuracy_theta', thetas[high_accuracy_i], n_examples) # pyright: ignore[reportArgumentType]
-            self.log_metric(f'{prefix}_best_precision:best_acc', precision_scores[high_accuracy_i], n_examples) # pyright: ignore[reportArgumentType]
-            self.log_metric(f'{prefix}_best_recall:best_acc', recall_scores[high_accuracy_i], n_examples) # pyright: ignore[reportArgumentType]
+            self.log_metric(f'{prefix}_precision:best_acc', precision_scores[high_accuracy_i], n_examples) # pyright: ignore[reportArgumentType]
+            self.log_metric(f'{prefix}_recall:best_acc', recall_scores[high_accuracy_i], n_examples) # pyright: ignore[reportArgumentType]
             
         except Exception as e:
             logger.error(f'theta: {theta} | error: {e}')
