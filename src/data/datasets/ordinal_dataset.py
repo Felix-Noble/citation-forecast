@@ -48,7 +48,7 @@ class OrdinalDataset(Dataset[tuple[Tensor, ...]]):
         self.TRUNCATE: bool | str = truncate
 
         self.lf: pl.LazyFrame = (
-                pl.scan_parquet(data_path)
+                pl.scan_parquet(list(Path(data_path).glob('*.par*')))
                 .select(columns)
                 .filter((pl.col('publication_date_int') >= self.t_start) & (pl.col('publication_date_int') < self.t_end))
                 ) 
