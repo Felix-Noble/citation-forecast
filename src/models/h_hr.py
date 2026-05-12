@@ -166,6 +166,7 @@ class HAttnBlock(nn.Module):
 class H_HR(nn.Module):
     """ Heirarchical recurrent attention with target smoothing"""
     config_schema = ModelConfig
+    filepath = __file__
     def __init__(
             self, 
             config: ModelConfig,

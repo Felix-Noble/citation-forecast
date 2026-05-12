@@ -147,6 +147,7 @@ def main(
     mlflow.set_experiment(env.EXPERIMENT)
     with mlflow.start_run(run_name=run_name):
         mlflow.log_artifact('config/config.py')
+        mlflow.log_artifact(model.filepath)
         mlf_run = mlflow.active_run()
         log_params(config.train.dataset, scheduler)
 
