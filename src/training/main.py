@@ -149,7 +149,7 @@ def main(
         mlflow.log_artifact('config/config.py')
         mlflow.log_artifact(model.filepath)
         mlf_run = mlflow.active_run()
-        log_params(config.train.dataset, scheduler)
+        log_params(config.train.dataset, train_dataset, config.train.dataset, test_dataset, scheduler)
 
         for epoch in range(1, config.train.epochs + 1):
             model.train()
