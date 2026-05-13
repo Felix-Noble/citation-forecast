@@ -227,7 +227,7 @@ def main(
                     y=['cited_by_count'],
                     t_start=config.train.test_start.toordinal(),
                     t_end=config.train.test_end.toordinal(),
-                    config=config,
+                    config=eval_config,
                     return_mask=True,
                     pad=True,
                     dry_run=dry_run,
