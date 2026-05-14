@@ -317,8 +317,12 @@ def main(
             )
     
     except Exception as e:
-        logger.error(e)
-        raise e
+        try:
+            logger.error(e)
+        except:
+            logger.error('Failed to log error')
+        finally:
+            raise e
 
     finally: 
         if clear_temp:
