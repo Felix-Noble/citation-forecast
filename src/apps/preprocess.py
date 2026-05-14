@@ -187,7 +187,7 @@ def main(
         progress_bar.start()
 
         # Main Logic
-        lf: pl.LazyFrame = pl.scan_parquet(origin, extra_columns='ignore')
+        lf: pl.LazyFrame = pl.scan_parquet(list(origin.glob('*.par*')), extra_columns='ignore')
         if dry_run:
             lf = lf.slice(0,500)
         
