@@ -171,7 +171,8 @@ def main(
         if os.path.exists(destination):
             assert (len(os.listdir(destination)) < 1), "Ensure destination is empty"
 
-        n_rows: int = pl.scan_parquet(origin, extra_columns='ignore').select(pl.len()).collect(engine='streaming').item()
+        lf: pl.LazyFrame = pl.scan_parquet(list(origin.glob('*.par*')), extra_columns='ignore')
+        n_rows: int = measure_lf(lf)
         alternator = value_alternator()
 
         progress_bar = Progress(
@@ -187,7 +188,6 @@ def main(
         progress_bar.start()
 
         # Main Logic
-        lf: pl.LazyFrame = pl.scan_parquet(list(origin.glob('*.par*')), extra_columns='ignore')
         if dry_run:
             lf = lf.slice(0,500)
         
