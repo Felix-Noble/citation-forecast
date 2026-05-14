@@ -1,3 +1,4 @@
+from datetime import date
 import polars as pl
 import pandas as pd  
 from typing import override
@@ -18,8 +19,8 @@ class OrdinalDataset(Dataset[tuple[Tensor, ...]]):
                  data_path: str,
                  X: str | list[str],
                  y: str | list[str],
-                 t_start: int,
-                 t_end: int,
+                 t_start: date,
+                 t_end: date,
                  config: Config = config,
                  pad: bool = False,
                  truncate: bool | str = 'drop',
@@ -36,10 +37,10 @@ class OrdinalDataset(Dataset[tuple[Tensor, ...]]):
             self.y: list[str] = [y]
         else:
             self.y: list[str] = y
-        columns = self.x + self.y + ['publication_date_int']        
+        columns = self.x + self.y + ['publication_date']        
 
-        self.t_start: int = t_start
-        self.t_end: int = t_end
+        self.t_start = t_start
+        self.t_end = t_end
         self.MAX_LEN: int = config.model.max_len
         self.PAD_VALUE: int = config.model.pad_token_id
         self.N_BUCKETS: int = config.model.n_out
@@ -50,8 +51,9 @@ class OrdinalDataset(Dataset[tuple[Tensor, ...]]):
         self.lf: pl.LazyFrame = (
                 pl.scan_parquet(list(Path(data_path).glob('*.par*')))
                 .select(columns)
-                .filter((pl.col('publication_date_int') >= self.t_start) & (pl.col('publication_date_int') < self.t_end))
+                .filter((pl.col('publication_date') >= self.t_start) & (pl.col('publication_date') < self.t_end))
                 ) 
+
         if dry_run:
             self.lf = self.lf.slice(0, (config.train.batch_size * 3) - 1)
 
