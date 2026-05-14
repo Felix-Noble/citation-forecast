@@ -222,7 +222,7 @@ def main(
 
         if start_date is not None:
             l1 = measure_lf(lf)
-            lf = lf.filter((pl.col('publication_date_int') >= start_date.toordinal()))
+            lf = lf.filter((pl.col('publication_date') >= start_date))
             l2 = measure_lf(lf)
             logger.info(f'Dropped {l1 - l2:,} prior to {start_date}') 
         else:
@@ -230,7 +230,7 @@ def main(
 
         if end_date is not None:
             l1 = measure_lf(lf)
-            lf = lf.filter((pl.col('publication_date_int') < end_date.toordinal()))
+            lf = lf.filter((pl.col('publication_date') < end_date))
             l2 = measure_lf(lf)
             logger.info(f'Dropped {l1 - l2:,} after {end_date}')
         else:
