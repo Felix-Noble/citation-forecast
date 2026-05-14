@@ -62,7 +62,7 @@ def export_parquet(
 
 @app.callback(invoke_without_command=True)
 def main(
-    origin: str = typer.Argument(
+    origin: Path = typer.Argument(
             help = 'path to data',
             ),
     name: str = typer.Option(
