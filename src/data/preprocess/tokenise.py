@@ -57,4 +57,10 @@ def main(
             .map_batches(tokenise_partition, return_dtype=pl.List(pl.Int64))
             .alias(f'{col}_tokens')
         )
+        lf = lf.with_columns(
+                pl.when(pl.col(col).is_null())
+                .then(pl.lit([], dtype=pl.List(pl.Int64)))
+                .otherwise(pl.col(f'{col}_tokens'))
+                .alias(f'{col}_tokens')
+                )
     return lf
