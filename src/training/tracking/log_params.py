@@ -15,8 +15,8 @@ def log_params(
         mod_params = {f'{k}-{sk}': val for sk, val in v.__dict__.items()}
         param_dict.update(mod_params)
 
-    param_dict['train_dataset'] = config.train.dataset
-    param_dict['test_dataset'] = config.train.dataset
+    param_dict['train_dataset'] = config.train.train_dataset
+    param_dict['test_dataset'] = config.train.test_dataset
     param_dict['train_n_examps'] = len(train_dataset)
     param_dict['test_n_examps'] = len(test_dataset)
 
