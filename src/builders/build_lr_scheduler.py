@@ -14,7 +14,7 @@ def build_lr_scheduler(
 
     warmup_scheduler = torch.optim.lr_scheduler.LinearLR(
         optimizer, 
-        start_factor=0.5, 
+        start_factor=0.01, 
         end_factor=1.0,
         total_iters=milestones[0],
         last_epoch=-1 # Used to implement restart from checkpoint
@@ -24,7 +24,7 @@ def build_lr_scheduler(
         optimizer,
         T_0=20,
         T_mult=1,
-        eta_min=config.train.lr * 0.6,
+        eta_min=config.train.lr * 0.999,
         last_epoch=-1, # Used to implement restart from checkpoint
     )
 
