@@ -1,5 +1,5 @@
 import os
-os.environ['TOKENIZERS_PARALLELISM'] = 'false'
+os.environ['TOKENIZERS_PARALLELISM'] = 'true'
 os.environ["POLARS_MAX_THREADS"] = "32"
 from config import config
 from src.data.preprocess import clean_step, tokenise_step
@@ -145,6 +145,15 @@ def main(
             '--type',
             help = 'Types of document (eg. article, book chapter) to include'
             ),
+    filt_license: bool = typer.Option(
+            True,
+            help='Remove non-permissive licenses'
+            ),
+    replace_non_permissive_cols: list[str] = typer.Option(
+            [],
+            '--replace-non-permissive-col',
+            help='Replace non-permissively licensed col with corresponding val entry'
+            ),
     dry_run: bool = typer.Option(
             False,
             '--dry-run',
@@ -160,7 +169,7 @@ def main(
     # Safety Checks
     assert (tokeniser and tokenise_cols) or (not tokeniser and not tokenise_cols), 'Provide columns to be tokenised'
     assert (embed_model and embed_cols) or (not embed_model and not embed_cols), 'Provide columns to be embedded'
-    assert (len(clean_cols) == len(clean_levels) == len(clean_min_len)), 'Clean cols, levels, and min-lens must be givein in same quanity'
+    assert (len(clean_cols) == len(clean_levels) == len(clean_min_len)), 'Clean cols, levels, and min-lens must be give in in same quanity'
 
     try:
         # Setup
@@ -192,11 +201,23 @@ def main(
             lf = lf.slice(0,500)
         
         # License filtering
-        l1 = measure_lf(lf)
-        lf = lf.filter(pl.col('is_license_safe'))
-        l2 = measure_lf(lf)
-        logger.info(f'Dropped {l1 - l2:,} with non-permissive licenses') 
-
+        if filt_license:
+            l1 = measure_lf(lf)
+            lf = lf.filter(pl.col('is_license_safe'))
+            l2 = measure_lf(lf)
+            logger.info(f'Dropped {l1 - l2:,} with non-permissive licenses') 
+        else:
+            logger.warning('Including non-permissive licenses')
+       
+        for col in replace_non_permissive_cols:
+            logger.info(f'Replacing non-permissive {col} with {None}')
+            lf = lf.with_columns(
+                    pl.when(pl.col('is_license_safe') == False)
+                    .then(pl.lit(None, dtype=lf.schema[col]))
+                    .otherwise(pl.col(col))
+                    .alias(col)
+                    )
+    
         if clean_cols:
             for col, level, min_len in zip(clean_cols, clean_levels, clean_min_len):
                 l1 = measure_lf(lf)
@@ -210,7 +231,7 @@ def main(
                 logger.info(f'Dropped {l1 - l2:,} in {col} at clean lvl {level}') 
         else:
             logger.warning('No cols selected for cleaning')
-
+            
         if drop_na_cols:
             for col in drop_na_cols:
                 l1 = measure_lf(lf)
@@ -315,7 +336,12 @@ def main(
                 progress_task=progress,
                 compression_level=compression_level,
             )
-    
+
+        for i in range(2):
+            logger.info(f'Deleting temp{i}')
+            if os.path.exists(f'./temp{i}'):
+                shutil.rmtree(f'./temp{i}')
+                
     except Exception as e:
         try:
             logger.error(e)
@@ -325,9 +351,4 @@ def main(
             raise e
 
     finally: 
-        if clear_temp:
-            for i in range(2):
-                logger.info(f'Deleting temp{i}')
-                if os.path.exists(f'./temp{i}'):
-                    shutil.rmtree(f'./temp{i}')
-
+        pass    
