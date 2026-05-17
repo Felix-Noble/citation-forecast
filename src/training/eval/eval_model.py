@@ -20,7 +20,7 @@ def eval_model(
 
     model.eval()
     with torch.no_grad():
-        for batch_i, (X, y, mask) in enumerate(dataloader):
+        for batch_i, (X, y, mask, weight) in enumerate(dataloader):
             metric_tracker.process_values((y,), ('test_y',))
             with stream_context:
                 X = X.to(device, non_blocking=True)

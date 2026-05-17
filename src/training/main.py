@@ -93,24 +93,27 @@ def main(
     scheduler = build_lr_scheduler(optimizer)
 
     train_dataset = BinaryCategoricalDataset(
-        data_path=str(env.STAGED_LOC / config.train.dataset),
-        X=['title_tokens', 'abstract_tokens'],
+        data_path=str(env.STAGED_LOC / config.train.train_dataset),
+        X=['title_tokens'],
         y=['cited_by_count'],
         t_start=config.train.train_start,
         t_end=config.train.train_end,
+        weights=config.train.loss.weights,
         config=config,
+        max_len=config.model.max_len,
         return_mask=True,
         pad=True,
         dry_run=dry_run,
     )
 
     test_dataset = BinaryCategoricalDataset(
-        data_path=str(env.STAGED_LOC / config.train.dataset),
-        X=['title_tokens', 'abstract_tokens'],
+        data_path=str(env.STAGED_LOC / config.train.test_dataset),
+        X=['title_tokens'],
         y=['cited_by_count'],
         t_start=config.train.test_start,
         t_end=config.train.test_end,
         config=config,
+        max_len=config.model.max_len_eval,
         return_mask=True,
         pad=True,
         dry_run=dry_run,
@@ -157,7 +160,7 @@ def main(
             example_progress.reset(examples_done, description='Train examps', total=len(train_dataloader) * config.train.batch_size)
             eval_example_progress.reset(examples_done, description='Eval examps', total=len(test_dataloader) * config.train.batch_size)
 
-            for batch_i, (X, y, mask) in enumerate(train_dataloader):
+            for batch_i, (X, y, mask, weight) in enumerate(train_dataloader):
                 metric_tracker.process_values((y,), ('train_y',))
                 with stream_context:
                     X = X.to(device, non_blocking=True)
@@ -166,7 +169,7 @@ def main(
                 stream_sync()
 
                 logits, probs, sigma = model(X, mask)
-                loss = loss_fn(logits=logits, probs=probs, sigma=sigma, target=y)
+                loss = loss_fn(weight=weight, logits=logits, probs=probs, sigma=sigma, target=y)
                 loss_cpu = loss.detach().item()
                 sigma_cpu = torch.mean(sigma.detach()).item() 
 

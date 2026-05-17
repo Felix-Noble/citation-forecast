@@ -21,6 +21,8 @@ class OrdinalDataset(Dataset[tuple[Tensor, ...]]):
                  y: str | list[str],
                  t_start: date,
                  t_end: date,
+                 max_len: int,
+                 weights: list[float] | None=None,
                  config: Config = config,
                  pad: bool = False,
                  truncate: bool | str = 'drop',
@@ -41,7 +43,8 @@ class OrdinalDataset(Dataset[tuple[Tensor, ...]]):
 
         self.t_start = t_start
         self.t_end = t_end
-        self.MAX_LEN: int = config.model.max_len
+        self.weights = weights
+        self.MAX_LEN: int = max_len 
         self.PAD_VALUE: int = config.model.pad_token_id
         self.N_BUCKETS: int = config.model.n_out
         self.PAD: bool = pad
@@ -106,9 +109,11 @@ class OrdinalDataset(Dataset[tuple[Tensor, ...]]):
                     dtype=torch.float32
                                      ).flatten()
             y = self._format_y(y)
+       
+        weight = torch.tensor(float('nan'), dtype=torch.float32) if self.weights is None else self.weights[y.long()]
 
         if self.RETURN_MASK:
             mask = (x != self.PAD_VALUE).bool().unsqueeze(0).expand(self.MAX_LEN, -1)
-            return x, y, mask
+            return x, y, mask, weight
         else:
-            return x, y
+            return x, y, weight
