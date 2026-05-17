@@ -4,11 +4,13 @@ import os
 
 @dataclass(frozen=True)
 class Filter:
-    exclude = ['keywords:', 'Keywords:' 'query=', 'http', 'Abstract', 'Abstract '
+    exclude_quality = ['keywords:', 'Keywords:' 'query=', 'http', 'Abstract', 'Abstract '
     'ADVERTISEMENT RETURN TO ISSUE', 'PAPER ACCEPTED FOR PUBLICATION'
     'Article Views', 'Altimetric-Citations', 
     'Copyright', 'copyright', '©'
-    'reference to this paper', 'Google Scholar'
+    'reference to this paper', 'Google Scholar' ]
+
+    exclude_lang = [
     # foreign connectives (remember to include space)
     'de ',
     
@@ -65,9 +67,25 @@ def main(
         level: int = 1, #low=1 medium=2 high=3
     ):
     ## LOW 
+
     # content contains filtering
-    lf = lf.filter(~pl.col(col).str.contains_any(Filter.exclude))
-    
+    # dodo measure delta here 
+    l1 = lf.select(pl.len()).collect(engine='streaming').item()
+    lf = lf.with_columns(
+            pl.when(pl.col(col).str.contains_any(Filter.exclude_quality))
+            .then(pl.lit(None, dtype=lf.schema[col]))
+            .otherwise(pl.col(col))
+            .alias(col)
+        )
+    l2 = lf.drop_nulls(subset=col).select(pl.len()).collect(engine='streaming').item()
+    print(f'Filled {l1 - l2} {col} rows with {None}')
+    lf = lf.with_columns(
+            pl.when(pl.col(col).str.contains_any(Filter.exclude_lang))
+            .then(pl.lit('unknown', dtype=lf.schema[col]))
+            .otherwise(pl.col('language'))
+            .alias('language')
+        )
+
     ## MEDIUM
     if level > 1:
     # std filtering
@@ -79,8 +97,11 @@ def main(
         std: float = stats[f'{col}_len'].std()
         high: float = mean + (std * 3)  
         low: float = max(mean - (std * 3), min_len)
-        lf = lf.filter(
-            (pl.col(f'{col}_len') > low) & pl.col(f'{col}_len') < high
+        lf = lf.with_columns(
+            pl.when((pl.col(f'{col}_len') > low) & pl.col(f'{col}_len') < high)
+            .then(pl.lit(None, dtype=lf.schema[col]))
+            .otherwise(pl.col(col))
+            .alias(col)
         )
         lf = lf.drop(f'{col}_len')
 

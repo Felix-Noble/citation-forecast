@@ -112,6 +112,9 @@ Data pre-processing CLI and custom PyTorch Datasets/Loaders forming a flexible E
 
 - Add metadata export, drop count logging, more user warnings, to pre-processing 
 - Cleaning has more granular control with column specific 'levels', tidied argument names
+- Cleaning split into 'drop' and 'clear' (replace with null)
+- License based filtering and clearing added to clean 
+- Tokenise step leaves empty list for nulls instead of filling nulls with empty string prior to tokenisation
 - Pre-processing sped up by partitioning via filter instead of slicing
 - Log model file as mlflow arifact 
 
