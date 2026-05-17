@@ -12,6 +12,7 @@ setup.py
 *.obj
 
 # Other
+models/
 notes.md
 pyrightconfig.json
 temp/
