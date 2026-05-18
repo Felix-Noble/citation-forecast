@@ -104,6 +104,7 @@ def main(
         return_mask=True,
         pad=True,
         dry_run=dry_run,
+        name='train-dataset'
     )
 
     test_dataset = BinaryCategoricalDataset(
@@ -117,6 +118,7 @@ def main(
         return_mask=True,
         pad=True,
         dry_run=dry_run,
+        name='test-dataset'
     )
 
     examples_per_epoch = len(train_dataset) # update this for when sampling is introduced

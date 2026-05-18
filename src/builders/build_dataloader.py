@@ -42,9 +42,9 @@ def build_dataloader(
     dataloader = DataLoader(
         dataset,
         batch_size=config.train.batch_size,
-        num_workers=2,
-        prefetch_factor=2,
-        persistent_workers=False,
+        num_workers=8,
+        prefetch_factor=4,
+        persistent_workers=True,
         pin_memory=True,
         shuffle=shuffle,
         sampler = sampler,

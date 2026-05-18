@@ -6,13 +6,13 @@ from torch.utils.data import Dataset
 
 from config import Config, config
 from src.utils.logging import setup_logger
-from .ordinal_dataset import OrdinalDataset
+from .polars_dataset import PolarsDataset
 from pathlib import Path
 from logging import getLogger
 logger = getLogger(Path(__file__).stem)
 _ = setup_logger(logger, config.logging)
 
-class BinaryCategoricalDataset(OrdinalDataset):
+class BinaryCategoricalDataset(PolarsDataset):
     @override
     def _format_y(self, y: Tensor) -> Tensor:
         if y == 0:
