@@ -136,6 +136,10 @@ Data pre-processing CLI and custom PyTorch Datasets/Loaders forming a flexible E
 
 </details>
 
+<details>
+<summary><b>v0.5.2 Modal CPU service</b></summary>
+- Add modal CPU service for short prompt inference
+</details>
 
 ## v0.6
 <details>
