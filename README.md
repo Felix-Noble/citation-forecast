@@ -52,6 +52,7 @@ Data pre-processing CLI and custom PyTorch Datasets/Loaders forming a flexible E
 >
 > </details>
 
+
 > ## v0.3
 > <details>
 > <summary><b>v0.3.0 Dataloader Flexibility</b></summary>
@@ -79,8 +80,8 @@ Data pre-processing CLI and custom PyTorch Datasets/Loaders forming a flexible E
 > - Generalised parameter init function & metric calc functions responsive to store name prefix
 > 
 > </details>
-
-
+> 
+> 
 > <details>
 > <summary><b>v0.4.2 Standardise cross-app arg parsing</b></summary>
 > 
@@ -121,9 +122,29 @@ Data pre-processing CLI and custom PyTorch Datasets/Loaders forming a flexible E
 
 </details>
 
-## v0.5
+
+## 0.5 
 <details>
-<summary><b>v0.5.0 CLI &amp Config Consolidation</b></summary>
+<summary><b>v0.5.0 Dataset lazyframe refactor </b></summary>
+
+- Moved from in mem df to lazyframe for torch dataset object, keeping ids in mem only to avoid OOM's and slowdowns 
+- Added id col arg to dataset object for flexibility, relying on predicate pushdown and multiple workers for fast data fetching
+
+</details>
+
+## 0.5.1
+<details>
+<summary><b>v0.5.1 Descriptives app </b></summary>
+
+- Added descriptives app, allowing CLI driven descriptives generation of specific columns across datasets
+- Shows Polars descriptives table and relative/total frequency counts for variable bucket boundaries
+- Calculates proportional weights for balanced training with n_buckets classes
+
+</details>
+
+## v0.6
+<details>
+<summary><b>v0.6.0 CLI &amp Config Consolidation</b></summary>
 
 - Add config/env value overrides to train app
 - Move code-as-config module from root to src, allow config value overrides from CLI via option flags
