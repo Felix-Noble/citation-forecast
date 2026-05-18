@@ -120,27 +120,22 @@ Data pre-processing CLI and custom PyTorch Datasets/Loaders forming a flexible E
 > 
 > </details>
 
-</details>
-
-
-## 0.5 
-<details>
-<summary><b>v0.5.0 Dataset lazyframe refactor </b></summary>
-
-- Moved from in mem df to lazyframe for torch dataset object, keeping ids in mem only to avoid OOM's and slowdowns 
-- Added id col arg to dataset object for flexibility, relying on predicate pushdown and multiple workers for fast data fetching
-
-</details>
-
-## 0.5.1
-<details>
-<summary><b>v0.5.1 Descriptives app </b></summary>
-
-- Added descriptives app, allowing CLI driven descriptives generation of specific columns across datasets
-- Shows Polars descriptives table and relative/total frequency counts for variable bucket boundaries
-- Calculates proportional weights for balanced training with n_buckets classes
+> ## 0.5 
+> <details>
+> <summary><b>v0.5.0 Dataset ipc refactor </b></summary> 
+> - Moved from in mem df to ipc cached dataset post filtering operations for fast random access of OOM dataset rows
+> - Now organise dataset & their cache under the 'name' attribute 
+> </details>
+ 
+> <details>
+> <summary><b>v0.5.1 Descriptives app </b></summary> 
+> - Added descriptives app, allowing CLI driven descriptives generation of specific columns across datasets
+> - Shows Polars descriptives table and relative/total frequency counts for variable bucket boundaries
+> - Calculates proportional weights for balanced training with n_buckets classes 
+> </details>
 
 </details>
+
 
 ## v0.6
 <details>
