@@ -73,7 +73,7 @@ Data pre-processing CLI and custom PyTorch Datasets/Loaders forming a flexible E
 > - JSON data export for website historical performance graphs
 > 
 > </details>
- 
+> 
 > <details>
 > <summary><b>v0.4.1 Metric Tracker Generalisation</b></summary>
 > 
@@ -120,7 +120,6 @@ Data pre-processing CLI and custom PyTorch Datasets/Loaders forming a flexible E
 > - Log model file as mlflow arifact 
 >
 > </details>
-
 
 > ## 0.5 
 > <details>
