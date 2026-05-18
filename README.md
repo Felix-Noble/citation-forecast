@@ -142,9 +142,10 @@ Data pre-processing CLI and custom PyTorch Datasets/Loaders forming a flexible E
 </details>
 
 <details>
-<summary><b>v0.5.2 Metric tracker efficiency</b></summary>
+<summary><b>v0.5.2 Metric tracker efficiency &amp Model train checkpoint loading</b></summary>
 
 - Removed redundant recall/precision calculations from best accuracy metric calc
+- Added model checkpoint to be loaded in train loop
 
 </details>
 
