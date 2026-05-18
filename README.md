@@ -63,53 +63,54 @@ Data pre-processing CLI and custom PyTorch Datasets/Loaders forming a flexible E
 
 
 > ## v0.4 
+
 > <details>
 > <summary><b>v0.4.0 Eval CLI</b></summary>
- 
+> 
 > - CLI app for evaluating models
 > - Config driven with optional CLI overrides 
 > - Temporal scrub with variable intervals and MLflow tracking
 > - JSON data export for website historical performance graphs
- 
-> </details>
- 
-> <details>
-> <summary><b>v0.4.1 Metric Tracker Generalisation</b></summary>
- 
-> - Generalise & simplify metric tracker methods/initialisation
-> - Generalised parameter init function & metric calc functions responsive to store name prefix
- 
-> </details>
- 
- 
-> <details>
-> <summary><b>v0.4.2 Standardise cross-app arg parsing</b></summary>
- 
-> - Standardise start/end date arg parsing across apps
- 
-> </details>
- 
- 
-> <details>
-> <summary><b>v0.4.3 Update data loading & handling</b></summary>
- 
-> - Specialised dataset load funcs, more efficient mem use
-> - Ignore extra cols (e.g index) during parquet data load
-> - Add no. of examples in dataset to train/eval metric/param logging 
- 
-> </details>
- 
-> <details>
-> <summary><b>v0.4.4 Enhanced Metric calculation</b></summary>
- 
-> - Add 'best threshold' metric calculation for accuracy, also recording precicion/recall at that threshold
-> - PR & ROC AUC charts logged as mlflow artifacts during evaluation step
 > 
 > </details>
  
 > <details>
+> <summary><b>v0.4.1 Metric Tracker Generalisation</b></summary>
+> 
+> - Generalise & simplify metric tracker methods/initialisation
+> - Generalised parameter init function & metric calc functions responsive to store name prefix
+> 
+> </details>
+> 
+> 
+> <details>
+> <summary><b>v0.4.2 Standardise cross-app arg parsing</b></summary>
+> 
+>- Standardise start/end date arg parsing across apps
+>
+> </details>
+>
+>
+> <details>
+> <summary><b>v0.4.3 Update data loading & handling</b></summary>
+>
+> - Specialised dataset load funcs, more efficient mem use
+> - Ignore extra cols (e.g index) during parquet data load
+> - Add no. of examples in dataset to train/eval metric/param logging 
+>
+> </details>
+>
+> <details>
+> <summary><b>v0.4.4 Enhanced Metric calculation</b></summary>
+>
+> - Add 'best threshold' metric calculation for accuracy, also recording precicion/recall at that threshold
+> - PR & ROC AUC charts logged as mlflow artifacts during evaluation step
+> 
+> </details>
+>
+> <details>
 > <summary><b>v0.4.5 Preprocess &amp Train app upgrade</b></summary>
-
+>
 > - Add metadata export, drop count logging, more user warnings, to pre-processing 
 > - Cleaning has more granular control with column specific 'levels', tidied argument names
 > - Cleaning split into 'drop' and 'clear' (replace with null)
@@ -117,25 +118,26 @@ Data pre-processing CLI and custom PyTorch Datasets/Loaders forming a flexible E
 > - Tokenise step leaves empty list for nulls instead of filling nulls with empty string prior to tokenisation
 > - Pre-processing sped up by partitioning via filter instead of slicing
 > - Log model file as mlflow arifact 
-
+>
 > </details>
+
 
 > ## 0.5 
 > <details>
 > <summary><b>v0.5.0 Dataset ipc refactor </b></summary> 
-
+>
 > - Moved from in mem df to ipc cached dataset post filtering operations for fast random access of OOM dataset rows
 > - Now organise dataset & their cache under the 'name' attribute 
-
+>
 > </details>
- 
+>
 > <details>
 > <summary><b>v0.5.1 Descriptives app </b></summary> 
-
+>
 > - Added descriptives app, allowing CLI driven descriptives generation of specific columns across datasets
 > - Shows Polars descriptives table and relative/total frequency counts for variable bucket boundaries
 > - Calculates proportional weights for balanced training with n_buckets classes 
-
+>
 > </details>
 
 </details>
