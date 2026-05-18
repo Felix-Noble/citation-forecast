@@ -125,21 +125,23 @@ class ClassificationTracker(MetricTracker):
                 preds = preds.numpy()
                 
                 balanced_accuracy = balanced_accuracy_score(y_true, preds)
-                precision = precision_score(y_true.long().numpy(), preds)
-                recall = recall_score(y_true.long().numpy(), preds)
 
                 accuracy_scores.append(balanced_accuracy)
-                precision_scores.append(precision)
-                recall_scores.append(recall)
 
             accuracy_scores = np.array(accuracy_scores)
-
             high_accuracy_i = np.argmax(accuracy_scores)
+
+            preds = torch.zeros_like(probs)
+            preds[probs > thetas[high_accuracy_i]] = 1
+            preds = preds.numpy()
+
+            recall = recall_score(y_true, preds)
+            precision = precision_score(y_true, preds)
             
             self.log_metric(f'{prefix}_best_accuracy', accuracy_scores[high_accuracy_i], n_examples) # pyright: ignore[reportArgumentType]
             self.log_metric(f'{prefix}_best_accuracy_theta', thetas[high_accuracy_i], n_examples) # pyright: ignore[reportArgumentType]
-            self.log_metric(f'{prefix}_precision:best_acc', precision_scores[high_accuracy_i], n_examples) # pyright: ignore[reportArgumentType]
-            self.log_metric(f'{prefix}_recall:best_acc', recall_scores[high_accuracy_i], n_examples) # pyright: ignore[reportArgumentType]
+            self.log_metric(f'{prefix}_precision:best_acc', precision, n_examples) # pyright: ignore[reportArgumentType]
+            self.log_metric(f'{prefix}_recall:best_acc', recall_scores, n_examples) # pyright: ignore[reportArgumentType]
             
         except Exception as e:
             logger.error(f'theta: {theta} | error: {e}')
