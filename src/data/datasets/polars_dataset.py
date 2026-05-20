@@ -2,6 +2,7 @@ from src.utils import export_parquet
 from datetime import date
 import polars as pl
 import os
+import shutil
 from typing import override
 import torch.nn as nn
 import torch
@@ -31,6 +32,7 @@ class PolarsDataset(Dataset[tuple[Tensor, ...]]):
                  return_mask: bool = False,
                  dry_run: bool = False,
                  name: str = 'dataset',
+                 auto_remove: bool = False,
                  ):
         super().__init__()
         assert not (weights is None and not y), 'Weights cannot be given when no y is given'
@@ -59,7 +61,9 @@ class PolarsDataset(Dataset[tuple[Tensor, ...]]):
         self.hot_path: Path = env.STAGED_LOC / 'hot' / self.name
         self.x_hot_path: Path = self.hot_path / 'x.ipc'
         self.y_hot_path: Path = self.hot_path / 'y.ipc'
-
+        if self.hot_path.exists() and auto_remove:
+            logger.info(f'Found data at {self.hot_path}, deleting')
+            shutil.rmtree(self.hot_path)
         if not self.hot_path.exists():
             os.makedirs(self.hot_path, exist_ok=True)
             files = list(Path(data_path).glob('*.par*'))
@@ -79,6 +83,7 @@ class PolarsDataset(Dataset[tuple[Tensor, ...]]):
                 lf = lf.with_columns(
                         total_len = pl.lit(0, dtype=pl.Int32)
                         )
+
                 for col in self.x:
                     lf = lf.with_columns(
                             total_len = pl.col('total_len') + pl.col(col).list.len()
@@ -90,7 +95,8 @@ class PolarsDataset(Dataset[tuple[Tensor, ...]]):
 
             lf = lf.drop([self.time_col]) 
             
-            logger.info(f'Saving {self.name} to {self.hot_path}')
+            rows = lf.select(pl.len()).collect().item()
+            logger.info(f'Saving {rows:,} rows where summed length of {self.x} <= {self.MAX_LEN} to hotpath: {self.name}')
             
             lf.select(self.x).sink_ipc(self.x_hot_path)
             lf.select(self.y).sink_ipc(self.y_hot_path)

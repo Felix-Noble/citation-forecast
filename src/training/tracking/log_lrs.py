@@ -1,10 +1,10 @@
 # src/training/tracking/log_lrs.py 
-import mlflow
 
 def log_lrs(
         scheduler,
         epoch: int,
         ) -> None:
+    import mlflow
     lrs = scheduler.get_last_lr()
     assert len(lrs) > 0, 'No lrs in schedueler'
     if len(lrs) > 1:
