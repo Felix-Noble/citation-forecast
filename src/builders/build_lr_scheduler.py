@@ -30,12 +30,18 @@ def build_lr_scheduler(
 
     exponential_scheduler = torch.optim.lr_scheduler.ExponentialLR(
         optimizer, 
-        gamma=0.95,
+        gamma=0.98,
     )
+    schedulers = [warmup_scheduler, cosine_oscilating_scheduler, exponential_scheduler]
+    milestones = list(milestones)
+    for i, milestone in enumerate(milestones):
+        if milestone < 0:
+            _ = milestones.pop(i)
+            _ = schedulers.pop(i)
 
     scheduler = torch.optim.lr_scheduler.SequentialLR(
         optimizer,
-        [warmup_scheduler, cosine_oscilating_scheduler, exponential_scheduler],
+        schedulers,
         milestones,
         last_epoch=-1,
     )
