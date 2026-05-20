@@ -115,8 +115,6 @@ class ClassificationTracker(MetricTracker):
 
         thetas = np.linspace(0, 1, num=100, endpoint=False)
         accuracy_scores = []
-        precision_scores = []
-        recall_scores = []
                     
         try: 
             for theta in thetas:
@@ -141,7 +139,7 @@ class ClassificationTracker(MetricTracker):
             self.log_metric(f'{prefix}_best_accuracy', accuracy_scores[high_accuracy_i], n_examples) # pyright: ignore[reportArgumentType]
             self.log_metric(f'{prefix}_best_accuracy_theta', thetas[high_accuracy_i], n_examples) # pyright: ignore[reportArgumentType]
             self.log_metric(f'{prefix}_precision:best_acc', precision, n_examples) # pyright: ignore[reportArgumentType]
-            self.log_metric(f'{prefix}_recall:best_acc', recall_scores, n_examples) # pyright: ignore[reportArgumentType]
+            self.log_metric(f'{prefix}_recall:best_acc', recall, n_examples) # pyright: ignore[reportArgumentType]
             
         except Exception as e:
             logger.error(f'theta: {theta} | error: {e}')
