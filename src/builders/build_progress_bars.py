@@ -27,7 +27,6 @@ def build_example_progress(disable: bool=False):
         speed_estimate_period=60.0 * 30, # mins
         disable= disable,
     )   
-    example_progress.start()
     return example_progress
 
 def build_eval_example_progress(disable: bool=False):
@@ -42,7 +41,6 @@ def build_eval_example_progress(disable: bool=False):
         speed_estimate_period=60.0 * 30, # mins
         disable= disable,
     )
-    eval_example_progress.start()
     return eval_example_progress
     
 def build_mem_util_progress(disable: bool=False):
@@ -52,7 +50,6 @@ def build_mem_util_progress(disable: bool=False):
         TextColumn('[task.completed]{task.completed:.1f}/{task.total:.1f} MiB'),
         disable= disable,
     )
-    mem_util_progress.start()
     return mem_util_progress
 
 def build_progress_bars(disable=False) -> tuple[Progress, ...]:

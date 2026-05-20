@@ -46,6 +46,16 @@ def main(
         '--compile/--no-compile', '-c',
         help = 'compile model'
         ),
+    load_id: str = typer.Option(
+        '',
+        '--load-id',
+        help='MLflow run id to load checkpoint from'
+        ),
+    load_epoch: int = typer.Option(
+        False,
+        '--load-epoch',
+        help='Epoch to load checkpoint from'
+        ),
     dry_run: bool=typer.Option(
         False,
         '--dry-run', '--dry',
@@ -68,8 +78,11 @@ def main(
     torch.set_float32_matmul_precision(config.train.mat_mul_precision)
     device: torch.device = torch.device('cuda') if torch.cuda.is_available() and gpu else torch.device('cpu')
     assert ((device == torch.device('cuda')) or not gpu), 'No GPU available on this device, use --no-gpu option'
-
+    assert (load_id and load_epoch) or (not load_epoch and not load_id), 'load id/epoch only work together'
     model = build_model(device=device)
+    start_epoch: int = load_epoch + 1 if load_epoch else 1
+    TEMP_DIR: Path = Path('./temp/checkpoints') / load_id 
+
     if run_suffix:
         run_name = config.model.model_name + '-' + str(run_suffix)
     if dry_run:
@@ -94,7 +107,7 @@ def main(
 
     train_dataset = BinaryCategoricalDataset(
         data_path=str(env.STAGED_LOC / config.train.train_dataset),
-        X=['title_tokens'],
+        X=['title_tokens', 'abstract_tokens'],
         y=['cited_by_count'],
         t_start=config.train.train_start,
         t_end=config.train.train_end,
@@ -104,12 +117,13 @@ def main(
         return_mask=True,
         pad=True,
         dry_run=dry_run,
-        name='train-dataset'
+        name='train-dataset',
+        auto_remove=True,
     )
 
     test_dataset = BinaryCategoricalDataset(
         data_path=str(env.STAGED_LOC / config.train.test_dataset),
-        X=['title_tokens'],
+        X=['title_tokens', 'abstract_tokens'],
         y=['cited_by_count'],
         t_start=config.train.test_start,
         t_end=config.train.test_end,
@@ -118,7 +132,8 @@ def main(
         return_mask=True,
         pad=True,
         dry_run=dry_run,
-        name='test-dataset'
+        name='test-dataset',
+        auto_remove=True,
     )
 
     examples_per_epoch = len(train_dataset) # update this for when sampling is introduced
@@ -142,21 +157,42 @@ def main(
       example_progress, 
       eval_example_progress,) = build_progress_bars(disable = not progress) 
 
-    epochs_done = epoch_progress.add_task('Epochs', total=config.train.epochs)
-    examples_done = example_progress.add_task('Train Examples', total=len(train_dataloader) * config.train.batch_size)
-    eval_examples_done = eval_example_progress.add_task('Eval Examples', total=len(test_dataloader) * config.train.batch_size)
-
     import mlflow
     mlflow.set_tracking_uri(env.TRACKING_URI)
-    logger.info(f'Mlflow connection established at {env.TRACKING_URI}') 
+
+    from mlflow.tracking import MlflowClient
+    client: MlflowClient = MlflowClient()
     mlflow.set_experiment(env.EXPERIMENT)
-    with mlflow.start_run(run_name=run_name):
+    logger.info(f'Mlflow connection established at {env.TRACKING_URI}') 
+    if load_id and load_epoch:
+        checkpoint_file = TEMP_DIR / f'epoch-{load_epoch}.pt'
+        if checkpoint_file.exists():
+            logger.info(f'Loading weights file (load_epoch: {load_epoch}) from {TEMP_DIR}')
+        else:
+            os.makedirs(TEMP_DIR, exist_ok=True)
+            logger.info(f'Fetching weights file for (load_epoch: {load_epoch})')
+            _ = client.download_artifacts(
+                    load_id, 
+                    str( f'epoch-{load_epoch}.pt' ),
+                    str( TEMP_DIR  )
+            )
+        model.load_state_dict(
+            torch.load(
+                str( TEMP_DIR / f'epoch-{load_epoch}.pt' ),
+                weights_only=True,
+                map_location=device
+                ),
+            )
+        logger.info('Model state loaded')
+
+    with mlflow.start_run(run_name=run_name, parent_run_id=load_id):
         mlflow.log_artifact('config/config.py')
         mlflow.log_artifact(model.filepath)
         mlf_run = mlflow.active_run()
         log_params(train_dataset, test_dataset, scheduler)
 
-        for epoch in range(1, config.train.epochs + 1):
+
+        for epoch in range(start_epoch, start_epoch + config.train.epochs + 1):
             model.train()
 
             example_progress.reset(examples_done, description='Train examps', total=len(train_dataloader) * config.train.batch_size)
