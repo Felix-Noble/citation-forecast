@@ -191,7 +191,13 @@ def main(
         mlf_run = mlflow.active_run()
         log_params(train_dataset, test_dataset, scheduler)
 
+        epoch_progress.start()
+        example_progress.start()
+        eval_example_progress.start()
 
+        epochs_done = epoch_progress.add_task('Epochs', total=config.train.epochs)
+        examples_done = example_progress.add_task('Train Examples', total=len(train_dataloader) * config.train.batch_size)
+        eval_examples_done = eval_example_progress.add_task('Eval Examples', total=len(test_dataloader) * config.train.batch_size)
         for epoch in range(start_epoch, start_epoch + config.train.epochs + 1):
             model.train()
 

@@ -87,7 +87,7 @@ def main(
             help='MLflow tracking uri, overwrites env var'
             ),
         temp_dir: Path = typer.Option(
-            './temp/eval-model',
+            './temp/checkpoints',
             '--temp-dir',
             help='Folder to store temp data in (model config/weights)'
             ),
@@ -227,10 +227,13 @@ def main(
                     y=['cited_by_count'],
                     t_start=config.train.test_start,
                     t_end=config.train.test_end,
+                    max_len=config.model.max_len_eval,
                     config=eval_config,
                     return_mask=True,
                     pad=True,
                     dry_run=dry_run,
+                    name='eval-dataset',
+                    auto_remove=True
                     )
 
             test_dataloader = build_dataloader(
@@ -238,8 +241,8 @@ def main(
                     config=window_config,
                     )
                
+            example_progress_bar.start()
             example_progress = example_progress_bar.add_task('Examples', total=len(test_dataset))
-             
             eval_model(
                     model=model,
                     loss_fn=loss_fn,
