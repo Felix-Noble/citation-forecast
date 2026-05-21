@@ -1,5 +1,5 @@
 # src/training/eval/eval_model.py 
-from ..tracking import ClassificationTracker
+from ..tracking import BinaryClassificationTracker 
 from config import config
 import torch
 import torch.nn as nn
@@ -13,7 +13,7 @@ def eval_model(
     examples_done,
     stream_context,
     stream_sync,
-    metric_tracker: ClassificationTracker,
+    metric_tracker: BinaryClassificationTracker,
     device: torch.device,
     config = config,
 ) -> None:

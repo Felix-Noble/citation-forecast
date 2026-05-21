@@ -11,7 +11,7 @@ from src.builders import \
 
 from src.data.datasets import BinaryCategoricalDataset, OrdinalDataset
 from src.training.eval import eval_model
-from src.training.tracking import MetricTracker, ClassificationTracker, log_params, log_lrs
+from src.training.tracking import MetricTracker, BinaryClassificationTracker, log_params, log_lrs
 import polars as pl
 import logging
 from logging import getLogger

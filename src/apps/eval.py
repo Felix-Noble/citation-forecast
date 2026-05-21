@@ -1,7 +1,8 @@
 from config import Config, TrainConfig, config, env
+from src.data import PortionSampler 
 from src.utils.logging import setup_logger
 from src.builders import \
-        build_datasets, \
+        build_dataset, \
         build_eval_example_progress, \
         build_epoch_progress, \
         build_dataloader, \
@@ -11,7 +12,8 @@ from src.builders import \
 
 from src.data.datasets import BinaryCategoricalDataset, OrdinalDataset
 from src.training.eval import eval_model
-from src.training.tracking import MetricTracker, ClassificationTracker, log_params, log_lrs
+from src.training.tracking import MetricTracker, BinaryClassificationTracker, log_params, log_lrs
+import ast
 import logging
 from logging import getLogger
 import copy
@@ -53,12 +55,12 @@ def main(
             ),
         start_date: datetime | None = typer.Option(
             None, 
-            '--start-date', '-sd',
+            '--start-date', '-s',
             help='Datetime to start eval from'
             ),
         end_date: datetime | None = typer.Option(
             None, 
-            '--end-date', '-ed',
+            '--end-date', '-e',
             help='Datetime to end eval at'
             ),
         interval: int | None = typer.Option(
@@ -76,10 +78,30 @@ def main(
             '--experiment',
             help='MLflow experiment to load from, overwrites env var'
             ),
+        dataset_path: str = typer.Option(
+            '',
+            '--dataset-path',
+            help='Path to local dataset to load, overwrite config var',
+            ),
         dataset: str = typer.Option(
             '',
             '--dataset',
-            help='Local dataset to load, overwrite config var',
+            help='Name of dataset class to load, determins formatting of x/y columns'
+            ),
+        dataset_kwargs: str = typer.Option(
+            '',
+            '--dataset-kwargs',
+            help='Key word agrs to pass to dataset construcor'
+            ),
+        x_columns: list[str] = typer.Option(
+            [],
+            '--x-column', '-x',
+            help='Input columns to load from dataset'
+            ),
+        y_columns: list[str] = typer.Option(
+            [],
+            '--y-column', '-y',
+            help='Target columns to load from dataset'
             ),
         tracking_uri: str = typer.Option(
             '',
@@ -93,27 +115,30 @@ def main(
             ),
         clean_up: bool = typer.Option(
                 False,
-                '--clean-up', '-c',
+                '--clean-up', 
                 help='Delete temporary files after run completes'
                 ),
         dry_run: bool = typer.Option(
                 False,
                 '--dry-run',
                 help='Dry run with subset of dataset'
-                )
+                ),
+    ctx: typer.Context = None,
         ) -> None:
     # Required option checks 
     assert run_id, 'Provide a run id'
     assert epoch, 'Provide an epoch to load checkpoint from'
     assert start_date is not None, 'Provide a start date'
     assert interval is not None, 'Provide an interval'
+    assert dataset, 'Privide a dataset formatting class'
 
     # Initialise environment
     assert start_date or not interval, 'Specify an interval with start_date'
     assert interval or not end_date, 'Specify an end_date with interval'
 
     EXPERIMENT: str = experiment if experiment else env.EXPERIMENT + '-EVAL'
-    DATASET: str = dataset if dataset else config.train.dataset
+    dataset_path: str = dataset_path if dataset_path else config.train.dataset
+    dataset_kwargs: dict = ast.literal_eval(dataset_kwargs) if dataset_kwargs else {}
     TEMP_DIR: Path = temp_dir / run_id
     TRACKING_URI: str = tracking_uri if tracking_uri else env.TRACKING_URI
         # TODO assert that tracking URI is listening/connected
@@ -124,7 +149,7 @@ def main(
     T_DELTA: DateTimeVals = t_delta_map.get(interval_unit)
     window_progress_bar = build_epoch_progress()
     example_progress_bar = build_eval_example_progress()
-    loss_fn = build_loss()
+
     import warnings 
     warnings.filterwarnings('ignore')
 
@@ -137,7 +162,6 @@ def main(
     import torch._logging
     torch._logging.set_logs(all=logging.ERROR)
 
-    metric_tracker = build_eval_tracker(device=torch.device('cpu'), dtype=torch.float32)
 
     logger.info(f'MLflow experiment: {EXPERIMENT}')
     
@@ -185,26 +209,22 @@ def main(
                 ),
             )
     model.eval()
-
+    metric_tracker = build_eval_tracker(
+            config=eval_config, 
+            device=torch.device('cpu'), 
+            dtype=torch.float32,
+            )
+    loss_fn = build_loss(config=eval_config)
     logger.info(f'Model {eval_config.model.model_name} loaded to {device}')
     logger.info(f'Starting temporal iteration: from ... to... interval...') 
 
     current_t_start: datetime = start_date
-    with mlflow.start_run(run_name=f'{DATASET}\
+    with mlflow.start_run(run_name=f'{dataset_path}\
                                     -{start_date.year}\
-                                    -{interval}\
                                     -{end_date.year if end_date is not None else ':'}\
                                     --{run_id}'):
-        param_dict = {
-                'run_id': run_id,
-                'model_name': model_name,
-                'epoch': epoch,
-                'dataset': DATASET,
-                'start_date': start_date,
-                'end_date': end_date,
-                'interval': interval,
-                }
-        mlflow.log_params(param_dict)
+
+        mlflow.log_params(ctx.params)
         while True:
 
             current_t_end: datetime = datetime(
@@ -221,10 +241,14 @@ def main(
             window_config_args['test_start']  = current_t_start
             window_config_args['test_end']  = current_t_end
             window_config.train = TrainConfig(**window_config_args)
-            test_dataset = BinaryCategoricalDataset(
-                    data_path=str(env.STAGED_LOC / dataset),
-                    X=['title_tokens', 'abstract_tokens'],
-                    y=['cited_by_count'],
+
+            metric_tracker.export_loc = TEMP_DIR / f'{window_config.train.test_start.year}'
+
+            test_dataset = build_dataset(
+                    data_path=str(env.STAGED_LOC / dataset_path),
+                    dataset=dataset,
+                    X=x_columns,
+                    y=y_columns,
                     t_start=config.train.test_start,
                     t_end=config.train.test_end,
                     max_len=config.model.max_len_eval,
@@ -233,16 +257,22 @@ def main(
                     pad=True,
                     dry_run=dry_run,
                     name='eval-dataset',
-                    auto_remove=True
+                    auto_remove=True,
+                    **dataset_kwargs
                     )
+
+            sampler = None
+            if config.train.sample:
+                sampler = PortionSampler(test_dataset, config.train.sample)
 
             test_dataloader = build_dataloader(
                     dataset=test_dataset,
                     config=window_config,
+                    sampler=sampler
                     )
                
             example_progress_bar.start()
-            example_progress = example_progress_bar.add_task('Examples', total=len(test_dataset))
+            example_progress = example_progress_bar.add_task('Examples', total=len(test_dataloader) * window_config.train.batch_size)
             eval_model(
                     model=model,
                     loss_fn=loss_fn,

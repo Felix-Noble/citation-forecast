@@ -33,6 +33,7 @@ class PolarsDataset(Dataset[tuple[Tensor, ...]]):
                  dry_run: bool = False,
                  name: str = 'dataset',
                  auto_remove: bool = False,
+                 **kwargs,
                  ):
         super().__init__()
         assert not (weights is None and not y), 'Weights cannot be given when no y is given'
@@ -59,8 +60,12 @@ class PolarsDataset(Dataset[tuple[Tensor, ...]]):
         self.TRUNCATE: bool | str = truncate
         self.name: str = name
         self.hot_path: Path = env.STAGED_LOC / 'hot' / self.name
+        if dry_run:
+            self.hot_path: Path = env.STAGED_LOC / 'hot' / f'{self.name}-DRY'
+
         self.x_hot_path: Path = self.hot_path / 'x.ipc'
         self.y_hot_path: Path = self.hot_path / 'y.ipc'
+
         if self.hot_path.exists() and auto_remove:
             logger.info(f'Found data at {self.hot_path}, deleting')
             shutil.rmtree(self.hot_path)
@@ -76,7 +81,7 @@ class PolarsDataset(Dataset[tuple[Tensor, ...]]):
 
             if dry_run:
                 lf = lf.slice(0, (config.train.batch_size * 3) - 1)
-            
+ 
             lf = lf.drop_nulls(columns)
 
             if truncate == 'drop':
@@ -126,6 +131,7 @@ class PolarsDataset(Dataset[tuple[Tensor, ...]]):
             x = x[:self.MAX_LEN]
        
         x = self._format_x(x)
+
         y = torch.tensor(float('nan'), dtype=torch.float32) 
         if self.y:
             y_row: tuple[list[int], ...] = self.df_y.row(idx)

@@ -1,32 +1,35 @@
 from config import Config, config
-from src.training.tracking import ClassificationTracker
-from src.training.tracking.classification_tracker import StoreParams
+from src.training.tracking import BinaryClassificationTracker
+from src.training.tracking.metric_tracker import StoreParams
 import torch
 
 def build_eval_tracker(
         device: torch.device,
         dtype: torch.dtype,
-        config: Config = config
-                  ) -> ClassificationTracker:
+        config: Config,
+        **kwargs,
+                  ) -> BinaryClassificationTracker:
        param_tuple = (
             build_tracker_params(name='test_logits', device=device),
             build_tracker_params(name='test_probs', device=device),
             build_tracker_params(name='test_y', device=torch.device('cpu')),
             build_tracker_params(name='test_loss', device=device),
                ) 
-       metric_tracker = ClassificationTracker(
+       metric_tracker = BinaryClassificationTracker(
                 param_tuple,
                 dtype=dtype,
+                config=config,
                 device=device,
-                buffer=False,
+                **kwargs,
                 )
        return metric_tracker
 
 def build_train_tracker(
         device: torch.device,
         dtype: torch.dtype,
-        config: Config = config
-                  ) -> ClassificationTracker:
+        config: Config,
+        **kwargs,
+                  ) -> BinaryClassificationTracker:
     param_tuple = (
             build_tracker_params(name='train_logits', device=device),
             build_tracker_params(name='train_probs', device=device),
@@ -38,11 +41,13 @@ def build_train_tracker(
             build_tracker_params(name='test_y', device=torch.device('cpu')),
             build_tracker_params(name='test_loss', device=device),
             )
-    metric_tracker = ClassificationTracker(
+    metric_tracker = BinaryClassificationTracker(
         param_tuple,
         dtype=dtype,
+        config=config,
         device=device,
         buffer=False,
+        **kwargs,
         )
     return metric_tracker
 

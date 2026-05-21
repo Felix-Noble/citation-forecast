@@ -1,11 +1,11 @@
 from .metric_tracker import MetricTracker
-from .classification_tracker import ClassificationTracker
+from .binary_classification_tracker import BinaryClassificationTracker
 from .log_params import log_params
 from .log_lrs import log_lrs
 
 __all__ = [
         'MetricTracker',
-        'ClassificationTracker',
+        'BinaryClassificationTracker',
         'log_params',
         'log_lrs'
         ]

@@ -12,7 +12,7 @@ from src.data import PortionSampler
 from src.data.datasets import BinaryCategoricalDataset, OrdinalDataset
 from .eval import eval_model
 from .callbacks import isnan_async
-from .tracking import MetricTracker, ClassificationTracker, log_params, log_lrs
+from .tracking import MetricTracker, BinaryClassificationTracker, log_params, log_lrs
 
 import torch
 import os

@@ -15,7 +15,8 @@ import torch
 from pathlib import Path
 from logging import getLogger
 from src.utils.logging import setup_logger
-from config import config
+from config import config, Config
+
 
 logger = getLogger(Path(__file__).stem)
 _ = setup_logger(logger, config.logging)
@@ -54,17 +55,19 @@ class MetricTracker:
 
     """
     def __init__(self,
-                store_params: tuple[StoreParams, ...],
-                dtype: torch.dtype,
-                device: torch.device,
-                export: bool = True,
-                buffer: bool = False,
+                 store_params: tuple[StoreParams, ...],
+                 dtype: torch.dtype,
+                 device: torch.device,
+                 config: Config,
+                 export_loc: Path = Path(''),
+                 buffer: bool = False,
                  ):
 
         self.dtype = dtype
         self.device: torch.device = device
+        self.config = config
         self.buffer = buffer
-        self.export = export
+        self.export_loc = export_loc
         self.store_params: dict[str, StoreParams] = {params.name: params for params in store_params}
         self.stores: dict[str, Store] = {params.name: self._init_store(params) for params in store_params}
         
@@ -161,6 +164,8 @@ class MetricTracker:
         
         if len(store.store) > 0: 
             all_values: torch.Tensor = torch.concatenate(store.store)
+            if self.export_loc:
+                np.save( self.export_loc / store.name, all_values.numpy() )   
             self._reset_store(store)
             return all_values
         else:
@@ -175,8 +180,7 @@ class MetricTracker:
         if name not in self.metric_store.keys():
             self.metric_store[name] = []
         self.metric_store[name].append(MetricTuple(value, weight))
-
-    def _export_plots(self, 
+    def _log_plots(self, 
                       prefix: str, 
                       y_true: np.ndarray,
                       probs: np.ndarray,

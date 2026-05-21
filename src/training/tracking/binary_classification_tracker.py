@@ -2,6 +2,11 @@ from .metric_tracker import MetricTracker
 from typing import NamedTuple, override
 from dataclasses import dataclass
 from sklearn.metrics import roc_auc_score, average_precision_score, balanced_accuracy_score, precision_score, recall_score, mean_absolute_error # pyright: ignore[reportUnknownVariableType, reportMissingTypeStubs] 
+from sklearn.metrics import RocCurveDisplay, PrecisionRecallDisplay
+import matplotlib.pyplot as plt 
+import seaborn as sns
+import mlflow
+
 import torch
 import numpy as np
 from pathlib import Path
@@ -33,7 +38,7 @@ class MetricTuple(NamedTuple):
     score: float
     weight: float
     
-class ClassificationTracker(MetricTracker):
+class BinaryClassificationTracker(MetricTracker):
     """
         Classification Metrics Tracker:
 
@@ -46,6 +51,78 @@ class ClassificationTracker(MetricTracker):
 
 """
     @override
+    def _log_plots(self, 
+                   prefix: str,
+                   y_true: np.ndarray,
+                   probs: np.ndarray,
+                   step: int,
+                   ) -> None:
+        try:
+            roc_plot = RocCurveDisplay.from_predictions(
+                    y_true,
+                    probs
+                    ) 
+            mlflow.log_figure(roc_plot.figure_, f"{prefix}-plots/ROC/roc_curve-step-{step}.png", save_kwargs={'dpi': 72})
+        except Exception as e:
+            logger.error(e)
+
+        try:
+            pr_plot = PrecisionRecallDisplay.from_predictions(
+                    y_true,
+                    probs,
+                    plot_chance_level=True,
+                    ) 
+            mlflow.log_figure(pr_plot.figure_, f"{prefix}-plots/PR/pr_curve-step-{step}.png", save_kwargs={'dpi': 72})
+        except Exception as e:
+            logger.error(e)
+       
+        # OutPut Probs histogram
+        try:
+            # 1. Calculate Proportions for the Legend
+            total = len(y_true)
+            pos_count = np.sum(y_true == 1)
+            neg_count = np.sum(y_true == 0)
+
+            pos_pct = (pos_count / total) * 100
+            neg_pct = (neg_count / total) * 100
+
+            # 2. Set the visual style
+            sns.set_theme(style="whitegrid")
+            fig, ax = plt.subplots(figsize=(10, 6))
+
+            # We pass the arrays directly here
+            sns.histplot(
+                x=probs.squeeze(), 
+                hue=y_true, 
+                multiple='stack', 
+                palette={0: 'red', 1: 'green'}, 
+                bins=40,
+                edgecolor='white',
+                alpha=0.7,
+                ax=ax,
+            )
+
+            # 4. Customizing the Legend with Proportions
+            from matplotlib.lines import Line2D
+            legend_elements = [
+                Line2D([0], [0], color='green', lw=4, label=f'Positive (1): {pos_pct:.1f}%'),
+                Line2D([0], [0], color='red', lw=4, label=f'Negative (0): {neg_pct:.1f}%')
+            ]
+
+            ax.legend(handles=legend_elements, title="Label Distribution", loc='upper right')
+
+            # 5. Styling and Limits
+            plt.xlim(0, 1)
+            plt.xlabel('Classifier Output (Probability)', fontsize=11)
+            plt.ylabel('Count', fontsize=11)
+            plt.title('Histogram of Output Probabilities with target composition', fontsize=13, pad=15)
+            plt.tight_layout()
+
+            mlflow.log_figure(fig, f"{prefix}-plots/ProbHist/-histogram-step-{step}.png", save_kwargs={'dpi': 72})
+        except Exception as e:
+            logger.error(str(e))
+
+    @override
     def calc_metrics(self, 
                      prefix: str,
                      step:  int
@@ -53,7 +130,7 @@ class ClassificationTracker(MetricTracker):
         logits = self._gather_store(store_name=f'{prefix}_logits')
         probs = self._gather_store(store_name=f'{prefix}_probs')
         y_true = self._gather_store(store_name=f'{prefix}_y')
-        self._export_plots(prefix, y_true, probs, step)
+        self._log_plots(prefix, y_true.long().numpy(), probs.numpy(), step)
         if logits.size(0) != y_true.size(0):
             logger.error(f'Different n. examples in logits and y_true: logits shape: {logits.shape}, y_true shape:{y_true.shape}')
             return
@@ -84,7 +161,7 @@ class ClassificationTracker(MetricTracker):
                 mssg = str(e)
             logger.error(mssg)
 
-        if config.model.n_out == 1:
+        if self.config.model.n_out == 1:
             # binary case 
             preds = torch.zeros_like(probs)
             preds[probs > 0.5] = 1
@@ -110,7 +187,7 @@ class ClassificationTracker(MetricTracker):
         except Exception as e:
             logger.error(e)
         
-        if config.model.n_out != 1:
+        if self.config.model.n_out != 1:
             return
 
         thetas = np.linspace(0, 1, num=100, endpoint=False)

@@ -1,3 +1,4 @@
+from ._registry import dataset_registry
 from typing import override
 import torch.nn as nn
 import torch
@@ -12,6 +13,7 @@ from logging import getLogger
 logger = getLogger(Path(__file__).stem)
 _ = setup_logger(logger, config.logging)
 
+@dataset_registry
 class BinaryCategoricalDataset(PolarsDataset):
     @override
     def _format_y(self, y: Tensor) -> Tensor:
