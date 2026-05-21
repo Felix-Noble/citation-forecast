@@ -1,6 +1,7 @@
 from config import config, env
 from src.utils.logging import setup_logger
 from src.builders import \
+        build_dataset, \
         build_progress_bars, \
         build_lr_scheduler, \
         build_dataloader, \
@@ -105,8 +106,9 @@ def main(
 
     scheduler = build_lr_scheduler(optimizer)
 
-    train_dataset = BinaryCategoricalDataset(
+    train_dataset = build_dataset(
         data_path=str(env.STAGED_LOC / config.train.train_dataset),
+        dataset=config.train.dataset_class,
         X=['title_tokens', 'abstract_tokens'],
         y=['cited_by_count'],
         t_start=config.train.train_start,
@@ -119,10 +121,12 @@ def main(
         dry_run=dry_run,
         name='train-dataset',
         auto_remove=True,
+        **config.train.dataset_kwargs
     )
 
-    test_dataset = BinaryCategoricalDataset(
+    test_dataset = build_dataset(
         data_path=str(env.STAGED_LOC / config.train.test_dataset),
+        dataset=config.train.dataset_class,
         X=['title_tokens', 'abstract_tokens'],
         y=['cited_by_count'],
         t_start=config.train.test_start,
@@ -134,6 +138,7 @@ def main(
         dry_run=dry_run,
         name='test-dataset',
         auto_remove=True,
+        **config.train.dataset_kwargs
     )
 
     examples_per_epoch = len(train_dataset) # update this for when sampling is introduced
