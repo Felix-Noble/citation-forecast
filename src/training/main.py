@@ -57,6 +57,16 @@ def main(
         '--load-epoch',
         help='Epoch to load checkpoint from'
         ),
+    parent_id: str | None = typer.Option(
+        None, 
+        '--parent-id',
+        help='MLflow run id to set as parent'
+        ),
+    start_epoch: int = typer.Option(
+        False,
+        '--start-epoch',
+        help='Epoch to load checkpoint from'
+        ),
     dry_run: bool=typer.Option(
         False,
         '--dry-run', '--dry',
@@ -81,7 +91,7 @@ def main(
     assert ((device == torch.device('cuda')) or not gpu), 'No GPU available on this device, use --no-gpu option'
     assert (load_id and load_epoch) or (not load_epoch and not load_id), 'load id/epoch only work together'
     model = build_model(device=device)
-    start_epoch: int = load_epoch + 1 if load_epoch else 1
+    start_epoch: int =  start_epoch if start_epoch else (load_epoch + 1 if load_epoch else 1) 
     TEMP_DIR: Path = Path('./temp/checkpoints') / load_id 
 
     if run_suffix:
@@ -102,6 +112,7 @@ def main(
     metric_tracker = build_train_tracker(
         dtype=torch.float32,
         device=device,
+        config=config,
             )
 
     scheduler = build_lr_scheduler(optimizer)
@@ -110,7 +121,7 @@ def main(
         data_path=str(env.STAGED_LOC / config.train.train_dataset),
         dataset=config.train.dataset_class,
         X=['title_tokens', 'abstract_tokens'],
-        y=['cited_by_count'],
+        y=['citation_normalized_percentile'],
         t_start=config.train.train_start,
         t_end=config.train.train_end,
         weights=config.train.loss.weights,
@@ -128,7 +139,7 @@ def main(
         data_path=str(env.STAGED_LOC / config.train.test_dataset),
         dataset=config.train.dataset_class,
         X=['title_tokens', 'abstract_tokens'],
-        y=['cited_by_count'],
+        y=['citation_normalized_percentile'],
         t_start=config.train.test_start,
         t_end=config.train.test_end,
         config=config,
@@ -190,7 +201,7 @@ def main(
             )
         logger.info('Model state loaded')
 
-    with mlflow.start_run(run_name=run_name, parent_run_id=load_id):
+    with mlflow.start_run(run_name=run_name, parent_run_id=parent_id):
         mlflow.log_artifact('config/config.py')
         mlflow.log_artifact(model.filepath)
         mlf_run = mlflow.active_run()
