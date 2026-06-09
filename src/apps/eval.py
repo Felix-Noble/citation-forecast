@@ -43,6 +43,11 @@ def main(
             '--model-name', '-m',
             help='Model registry name'
             ),
+        prefix: str = typer.Option(
+            '',
+            '--prefix',
+            help='Prefix to mlflow run name'
+            ),
         run_id: str = typer.Option(
             '',
             '--run-id', '-id',
