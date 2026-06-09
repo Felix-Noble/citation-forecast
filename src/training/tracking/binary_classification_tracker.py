@@ -190,7 +190,7 @@ class BinaryClassificationTracker(MetricTracker):
         if self.config.model.n_out != 1:
             return
 
-        thetas = np.linspace(0, 1, num=100, endpoint=False)
+        thetas = np.linspace(0.25, 0.75, num=20, endpoint=False)
         accuracy_scores = []
                     
         try: 

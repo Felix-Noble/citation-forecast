@@ -59,9 +59,9 @@ class PolarsDataset(Dataset[tuple[Tensor, ...]]):
         self.RETURN_MASK: bool = return_mask
         self.TRUNCATE: bool | str = truncate
         self.name: str = name
-        self.hot_path: Path = env.STAGED_LOC / 'hot' / self.name
+        self.hot_path: Path = Path('./temp') / 'hot' / self.name
         if dry_run:
-            self.hot_path: Path = env.STAGED_LOC / 'hot' / f'{self.name}-DRY'
+            self.hot_path: Path = Path('./temp') / 'hot' / f'{self.name}-DRY'
 
         self.x_hot_path: Path = self.hot_path / 'x.ipc'
         self.y_hot_path: Path = self.hot_path / 'y.ipc'
@@ -72,7 +72,7 @@ class PolarsDataset(Dataset[tuple[Tensor, ...]]):
         if not self.hot_path.exists():
             os.makedirs(self.hot_path, exist_ok=True)
             files = list(Path(data_path).glob('*.par*'))
-
+            
             lf: pl.LazyFrame = (
                     pl.scan_parquet(files)
                     .select(columns)
@@ -90,9 +90,16 @@ class PolarsDataset(Dataset[tuple[Tensor, ...]]):
                         )
 
                 for col in self.x:
-                    lf = lf.with_columns(
-                            total_len = pl.col('total_len') + pl.col(col).list.len()
-                            )
+                    if f'{col}_len' in list(lf.schema.keys()):
+                        logger.debug(f'Adding {col} len from precalculated {col}_len col ')
+                        lf = lf.with_columns(
+                                total_len = pl.col('total_len') + pl.col(f'{col}_len')
+                                )
+                    else:
+                        logger.debug(f'Calculating {col} len')
+                        lf = lf.with_columns(
+                                total_len = pl.col('total_len') + pl.col(col).list.len()
+                                )
                 lf = lf.filter(
                         pl.col('total_len') <= self.MAX_LEN
                         )
@@ -100,7 +107,7 @@ class PolarsDataset(Dataset[tuple[Tensor, ...]]):
 
             lf = lf.drop([self.time_col]) 
             
-            rows = lf.select(pl.len()).collect().item()
+            rows = lf.select(pl.len()).collect(engine='streaming').item()
             logger.info(f'Saving {rows:,} rows where summed length of {self.x} <= {self.MAX_LEN} to hotpath: {self.name}')
             
             lf.select(self.x).sink_ipc(self.x_hot_path)

@@ -9,6 +9,7 @@ from rich.console import Console
 from sklearn.metrics import roc_auc_score, precision_score, recall_score, balanced_accuracy_score, mean_absolute_error # pyright: ignore[reportUnknownVariableType, reportMissingTypeStubs] 
 from sklearn.metrics import RocCurveDisplay, PrecisionRecallDisplay
 import mlflow
+import os
 import numpy as np
 import math
 import torch
@@ -59,7 +60,7 @@ class MetricTracker:
                  dtype: torch.dtype,
                  device: torch.device,
                  config: Config,
-                 export_loc: Path = Path(''),
+                 export_loc: Path | bool=False,
                  buffer: bool = False,
                  ):
 
@@ -165,6 +166,7 @@ class MetricTracker:
         if len(store.store) > 0: 
             all_values: torch.Tensor = torch.concatenate(store.store)
             if self.export_loc:
+                os.makedirs(self.export_loc, exist_ok=True)
                 np.save( self.export_loc / store.name, all_values.numpy() )   
             self._reset_store(store)
             return all_values
