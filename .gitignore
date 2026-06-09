@@ -12,6 +12,7 @@ setup.py
 *.obj
 
 # Other
+cmd.sh
 models/
 notes.md
 pyrightconfig.json
