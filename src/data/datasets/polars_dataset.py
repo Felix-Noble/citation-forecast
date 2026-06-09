@@ -4,6 +4,7 @@ import polars as pl
 import os
 import shutil
 from typing import override
+from dataclasses import dataclass
 import torch.nn as nn
 import torch
 from torch import Tensor
@@ -16,6 +17,14 @@ from logging import getLogger
 logger = getLogger(Path(__file__).stem)
 _ = setup_logger(logger, config.logging)
 
+@dataclass
+class Output:
+    id: Tensor | None = None
+    x: Tensor | None = None
+    y: Tensor | None = None
+    weight: Tensor | None = None
+    mask: Tensor | None = None
+
 class PolarsDataset(Dataset[tuple[Tensor, ...]]):
     def __init__(self, 
                  data_path: str,
@@ -26,6 +35,8 @@ class PolarsDataset(Dataset[tuple[Tensor, ...]]):
                  max_len: int,
                  weights: list[float] | None=None,
                  time_col: str = 'publication_date',
+                 return_id: bool = False,
+                 id_col: str = 'id',
                  config: Config = config,
                  pad: bool = False,
                  truncate: bool | str = 'drop',
@@ -37,34 +48,42 @@ class PolarsDataset(Dataset[tuple[Tensor, ...]]):
                  ):
         super().__init__()
         assert not (weights is None and not y), 'Weights cannot be given when no y is given'
-
+    
         if isinstance(X, str):
             self.x: list[str] = [X]
         else:
-            self.x: list[str] = X
+            self.x = X
         if isinstance(y, str):
             self.y: list[str] = [y]
         else:
-            self.y: list[str] = y
-        columns = self.x + self.y + [ time_col ]        
+            self.y = y
+        columns = self.x + self.y 
+        
+        if time_col:
+            columns += [ time_col ]        
+        if return_id:
+            columns += id_col
 
         self.t_start = t_start
         self.t_end = t_end
         self.weights = weights
         self.time_col = time_col
+        self.return_id = return_id 
+        self.id_col = id_col
         self.MAX_LEN: int = max_len 
         self.PAD_VALUE: int = config.model.pad_token_id
         self.N_BUCKETS: int = config.model.n_out
         self.PAD: bool = pad
-        self.RETURN_MASK: bool = return_mask
-        self.TRUNCATE: bool | str = truncate
-        self.name: str = name
-        self.hot_path: Path = Path('./temp') / 'hot' / self.name
+        self.RETURN_MASK = return_mask
+        self.TRUNCATE = truncate
+        self.name = name
+        self.hot_path: Path = Path('./.temp') / 'hot' / self.name
         if dry_run:
-            self.hot_path: Path = Path('./temp') / 'hot' / f'{self.name}-DRY'
+            self.hot_path = Path('./.temp') / 'hot' / f'{self.name}-DRY'
 
         self.x_hot_path: Path = self.hot_path / 'x.ipc'
         self.y_hot_path: Path = self.hot_path / 'y.ipc'
+        self.id_hot_path: Path = self.hot_path / 'id.ipc'
 
         if self.hot_path.exists() and auto_remove:
             logger.info(f'Found data at {self.hot_path}, deleting')
@@ -112,9 +131,13 @@ class PolarsDataset(Dataset[tuple[Tensor, ...]]):
             
             lf.select(self.x).sink_ipc(self.x_hot_path)
             lf.select(self.y).sink_ipc(self.y_hot_path)
+            if self.return_id:
+                lf.select([self.id_col]).sink_ipc(self.id_hot_path)
 
         self.df_x: pl.DataFrame = pl.read_ipc(self.x_hot_path, memory_map=True)         
         self.df_y: pl.DataFrame = pl.read_ipc(self.y_hot_path, memory_map=True)         
+        if self.return_id:
+            self.df_id: pl.DataFrame = pl.read_ipc(self.id_hot_path, memory_map=True)         
         logger.info(f'Hot path {self.hot_path} loaded') 
     
     def __len__(self) -> int:
@@ -127,7 +150,10 @@ class PolarsDataset(Dataset[tuple[Tensor, ...]]):
         return y
    
     @override
-    def __getitem__(self, idx: int) -> tuple[Tensor, ...]:
+    def __getitem__(self, idx: int) -> Output:
+        out: Output = Output()
+
+        # X (input)
         x_row: tuple[list[int], ...] = self.df_x.row(idx)
         x: Tensor = torch.cat(
             [torch.tensor(token_list) for token_list in x_row]
@@ -138,24 +164,31 @@ class PolarsDataset(Dataset[tuple[Tensor, ...]]):
             x = x[:self.MAX_LEN]
        
         x = self._format_x(x)
+        out.x = x
 
-        y = torch.tensor(float('nan'), dtype=torch.float32) 
+        # y (target)
         if self.y:
             y_row: tuple[list[int], ...] = self.df_y.row(idx)
             y: Tensor = torch.tensor(
                 [torch.tensor(target, dtype=torch.float32) for target in y_row]
                 ).flatten()
             y = self._format_y(y)
-
-        if self.weights is None:
-            weight = torch.tensor(float('nan'), dtype=torch.float32) 
-        else:
+            out.y = y
+         
+        # id (tracking)
+        if self.return_id:
+            id = torch.tensor(self.df_id.row(idx))
+            out.id = id
+        
+        # weights (per target class)
+        if self.weights is not None:
             weight: Tensor = torch.tensor(
                 [torch.tensor(self.weights[target.long()], dtype=torch.float32) for target in torch.atleast_1d(y)]
                 ).flatten()
+            out.weight = weight
 
         if self.RETURN_MASK:
             mask = (x != self.PAD_VALUE).bool().unsqueeze(0).expand(self.MAX_LEN, -1)
-            return x, y, mask, weight
-        else:
-            return x, y, weight
+            out.mask = mask
+
+        return out
