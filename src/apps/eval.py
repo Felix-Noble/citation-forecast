@@ -109,7 +109,7 @@ def main(
             help='MLflow tracking uri, overwrites env var'
             ),
         temp_dir: Path = typer.Option(
-            './temp/checkpoints',
+            './.temp/',
             '--temp-dir',
             help='Folder to store temp data in (model config/weights)'
             ),
@@ -140,6 +140,8 @@ def main(
     dataset_path: str = dataset_path if dataset_path else config.train.test_dataset
     dataset_kwargs: dict = ast.literal_eval(dataset_kwargs) if dataset_kwargs else ast.literal_eval(config.train.dataset_kwargs)
     TEMP_DIR: Path = temp_dir / run_id
+    CHECKPOINT_DIR = TEMP_DIR / 'checkpoints'
+    PREDICTIONS_DIR = TEMP_DIR / 'predictions'
     TRACKING_URI: str = tracking_uri if tracking_uri else env.TRACKING_URI
         # TODO assert that tracking URI is listening/connected
     t_delta_map = {
@@ -175,18 +177,18 @@ def main(
     logger.info(f'MLflow tracking URI connected: {TRACKING_URI}')
     
     # Fetch model artifacts, TODO: add model arch file as artifact
-    os.makedirs(TEMP_DIR, exist_ok=True) 
-    if os.path.exists(TEMP_DIR / 'eval_config.py'):
+    os.makedirs(CHECKPOINT_DIR, exist_ok=True) 
+    if os.path.exists(CHECKPOINT_DIR / 'eval_config.py'):
         logger.info(f'Loading Config file from {TEMP_DIR}')
     else:
         logger.info('Fetching config file')
         client.download_artifacts(
                 run_id, 
                 str( 'config.py' ), 
-                str( TEMP_DIR ),
+                str( CHECKPOINT_DIR ),
                                   )
-        os.rename(str( TEMP_DIR / 'config.py' ), str( TEMP_DIR / 'eval_config.py' ))
-    if os.path.exists(TEMP_DIR / f'epoch-{epoch}.pt'):
+        os.rename(str( CHECKPOINT_DIR / 'config.py' ), str( CHECKPOINT_DIR / 'eval_config.py' ))
+    if os.path.exists( CHECKPOINT_DIR / f'epoch-{epoch}.pt'):
         logger.info(f'Loading weights file (Epoch: {epoch}) from {TEMP_DIR}')
     else:
         logger.info(f'Fetching weights file for (Epoch: {epoch})')
@@ -197,7 +199,7 @@ def main(
                                   )
 
     # Load model specific config
-    sys.path.append(os.path.abspath(str(TEMP_DIR)))
+    sys.path.append(os.path.abspath(str(CHECKPOINT_DIR)))
     from eval_config import Config as EvalConfig
     eval_config = EvalConfig()
     model = build_model(device=device, config=eval_config)
@@ -205,7 +207,7 @@ def main(
 
     model.load_state_dict(
             torch.load(
-                str( TEMP_DIR / f'epoch-{epoch}.pt' ),
+                str( CHECKPOINT_DIR / f'epoch-{epoch}.pt' ),
                 weights_only=True,
                 map_location=device
                 ),
@@ -221,10 +223,7 @@ def main(
     logger.info(f'Starting temporal iteration: from ... to... interval...') 
 
     current_t_start: datetime = start_date
-    with mlflow.start_run(run_name=f'{dataset_path}\
-                                    -{start_date.year}\
-                                    -{end_date.year if end_date is not None else ':'}\
-                                    --{run_id}'):
+    with mlflow.start_run(run_name=f'{prefix}{dataset_path}-{run_id}'):
 
         mlflow.log_params(ctx.params)
         while True:
@@ -244,8 +243,9 @@ def main(
             window_config_args['test_end']  = current_t_end
             window_config_args['batch_size'] = config.train.batch_size
             window_config.train = TrainConfig(**window_config_args)
-
-            metric_tracker.export_loc = TEMP_DIR / f'{window_config.train.test_start.year}'
+            
+            metric_tracker.export = True
+            metric_tracker.export_loc = PREDICTIONS_DIR / f'{window_config.train.test_start.year}'
 
             test_dataset = build_dataset(
                     data_path=str(env.STAGED_LOC / dataset_path),
@@ -255,6 +255,8 @@ def main(
                     t_start=config.train.test_start,
                     t_end=config.train.test_end,
                     max_len=config.model.max_len_eval,
+                    id_col='id',
+                    return_id=True,
                     config=eval_config,
                     return_mask=True,
                     pad=True,

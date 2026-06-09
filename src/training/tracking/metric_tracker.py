@@ -60,15 +60,18 @@ class MetricTracker:
                  dtype: torch.dtype,
                  device: torch.device,
                  config: Config,
-                 export_loc: Path | Literal[False]=False,
+                 export: bool=False,
+                 export_loc: Path | None=None,
                  buffer: bool = False,
                  ):
+        assert not export or export_loc is not None, 'Provide a location to export metrics to'
 
         self.dtype: torch.dtype = dtype
         self.device: torch.device = device
-        self.config: Config = config
-        self.buffer: bool = buffer
-        self.export_loc: Path | Literal[False] = export_loc
+        self.config = config
+        self.buffer = buffer
+        self.export = export
+        self.export_loc = export_loc
         self.store_params: dict[str, StoreParams] = {params.name: params for params in store_params}
         self.stores: dict[str, Store] = {params.name: self._init_store(params) for params in store_params}
         
@@ -165,7 +168,7 @@ class MetricTracker:
         
         if len(store.store) > 0: 
             all_values: torch.Tensor = torch.concatenate(store.store)
-            if self.export_loc and not isinstance(self.export_loc, bool):
+            if self.export and self.export_loc is not None:
                 os.makedirs(self.export_loc, exist_ok=True)
                 np.save( self.export_loc / store.name, all_values.numpy() )   
             _ = self._reset_store(store)

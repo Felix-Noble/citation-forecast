@@ -10,6 +10,7 @@ def build_eval_tracker(
         **kwargs,
                   ) -> BinaryClassificationTracker:
        param_tuple = (
+            build_tracker_params(name='test_ids', device=device),
             build_tracker_params(name='test_logits', device=device),
             build_tracker_params(name='test_probs', device=device),
             build_tracker_params(name='test_y', device=torch.device('cpu')),
@@ -31,11 +32,13 @@ def build_train_tracker(
         **kwargs,
                   ) -> BinaryClassificationTracker:
     param_tuple = (
+            build_tracker_params(name='test_ids', device=device),
             build_tracker_params(name='train_logits', device=device),
             build_tracker_params(name='train_probs', device=device),
             build_tracker_params(name='train_y', device=torch.device('cpu')),
             build_tracker_params(name='train_loss', device=device),
 
+            build_tracker_params(name='train_ids', device=device),
             build_tracker_params(name='test_logits', device=device),
             build_tracker_params(name='test_probs', device=device),
             build_tracker_params(name='test_y', device=torch.device('cpu')),

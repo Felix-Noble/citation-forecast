@@ -20,12 +20,13 @@ def eval_model(
 
     model.eval()
     with torch.no_grad():
-        for batch_i, (X, y, mask, weight) in enumerate(dataloader):
+        for batch_i, batch in enumerate(dataloader):
+            y = batch.y
             metric_tracker.process_values((y,), ('test_y',))
             with stream_context:
-                X = X.to(device, non_blocking=True)
+                X = batch.X.to(device, non_blocking=True)
                 y = y.to(device, non_blocking=True)
-                mask = mask.to(device, non_blocking=True)
+                mask = batch.mask.to(device, non_blocking=True)
             stream_sync()
 
             logits, probs, sigma = model(X, mask)
@@ -36,5 +37,8 @@ def eval_model(
 
             metric_tracker.log_metric('test_loss', loss_cpu, X.shape[0])
             metric_tracker.log_metric('test_sigma', sigma_cpu, X.shape[0])
+            if batch.id is not None:
+                metric_tracker.log_metric('test_id', batch.id, X.shape[0])
+
             metric_tracker.process_values((logits.detach(), probs.detach()), ('test_logits', 'test_probs'))
             example_progress.update(examples_done, advance=config.train.batch_size)
