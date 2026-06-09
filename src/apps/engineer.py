@@ -66,6 +66,9 @@ def main(
 
     if not output_path:
         output = origin.parent / f'{origin.name}-engineered'
+    else: 
+        output = output_path
+
     logger.info(f'Engineering {origin} to {output}')
 
     progress_bar = Progress(
@@ -116,6 +119,7 @@ def main(
         lf.write_json('./temp/engineer-dry-run.json')
 
     else:
+        os.makedirs(output, exist_ok=True)
         export_parquet(
                 lf=lf,
                 destination=output,
