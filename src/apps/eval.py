@@ -137,8 +137,8 @@ def main(
     assert interval or not end_date, 'Specify an end_date with interval'
 
     EXPERIMENT: str = experiment if experiment else env.EXPERIMENT + '-EVAL'
-    dataset_path: str = dataset_path if dataset_path else config.train.dataset
-    dataset_kwargs: dict = ast.literal_eval(dataset_kwargs) if dataset_kwargs else {}
+    dataset_path: str = dataset_path if dataset_path else config.train.test_dataset
+    dataset_kwargs: dict = ast.literal_eval(dataset_kwargs) if dataset_kwargs else ast.literal_eval(config.train.dataset_kwargs)
     TEMP_DIR: Path = temp_dir / run_id
     TRACKING_URI: str = tracking_uri if tracking_uri else env.TRACKING_URI
         # TODO assert that tracking URI is listening/connected
@@ -201,6 +201,8 @@ def main(
     from eval_config import Config as EvalConfig
     eval_config = EvalConfig()
     model = build_model(device=device, config=eval_config)
+    model.compile(mode='max-autotune')
+
     model.load_state_dict(
             torch.load(
                 str( TEMP_DIR / f'epoch-{epoch}.pt' ),
@@ -240,6 +242,7 @@ def main(
             window_config_args = config.train.__dict__ 
             window_config_args['test_start']  = current_t_start
             window_config_args['test_end']  = current_t_end
+            window_config_args['batch_size'] = config.train.batch_size
             window_config.train = TrainConfig(**window_config_args)
 
             metric_tracker.export_loc = TEMP_DIR / f'{window_config.train.test_start.year}'
