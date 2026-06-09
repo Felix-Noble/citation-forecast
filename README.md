@@ -63,7 +63,7 @@ Data pre-processing CLI and custom PyTorch Datasets/Loaders forming a flexible E
 
 
 > ## v0.4 
-
+>
 > <details>
 > <summary><b>v0.4.0 Eval CLI</b></summary>
 > 
@@ -121,6 +121,7 @@ Data pre-processing CLI and custom PyTorch Datasets/Loaders forming a flexible E
 >
 > </details>
 
+
 > ## 0.5 
 > <details>
 > <summary><b>v0.5.0 Dataset ipc refactor </b></summary> 
@@ -138,22 +139,28 @@ Data pre-processing CLI and custom PyTorch Datasets/Loaders forming a flexible E
 > - Calculates proportional weights for balanced training with n_buckets classes 
 >
 > </details>
-
-</details>
-
-<details>
-<summary><b>v0.5.2 Metric tracker efficiency &amp Model train checkpoint loading</b></summary>
-
-- Removed redundant recall/precision calculations from best accuracy metric calc
-- Added model checkpoint to be loaded in train loop
-
-</details>
-
-
-<details>
-<summary><b>v0.5.3 Modal CPU service</b></summary>
-
-- Add modal CPU service for short prompt inference
+> 
+> 
+> <details>
+> <summary><b>v0.5.2 Metric tracker efficiency &amp Model train checkpoint loading</b></summary>
+> 
+> - Removed redundant recall/precision calculations from best accuracy metric calc
+> - Added model checkpoint to be loaded in train loop
+> 
+> </details>
+> 
+> <details>
+> <summary><b>v0.5.3 Efficiency, Control &amp Clean update </b></summary>
+> 
+> - More efficient best accuracy calculations across a smaller range & no. of values 
+> - Train loop can load mlflow stored checkpoints & set parent run via CLI args
+> - Dataset formatting classes available via registry in CLI / config
+> - Dataset kwargs specified in CLI / config for flexible dataset initialisation
+> - Polars max threads, and compile mode determined by CLI args
+> - Learning rate scheduler args determined by config 
+> - New lowercase clean method for string columns
+> 
+> </details>
 
 </details>
 
