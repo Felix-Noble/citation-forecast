@@ -166,7 +166,17 @@ Data pre-processing CLI and custom PyTorch Datasets/Loaders forming a flexible E
 
 ## v0.6
 <details>
-<summary><b>v0.6.0 CLI &amp Config Consolidation</b></summary>
+<summary><b>v0.6.0 Model Eval Metric export for visualisation</b></summary>
+
+- Dataset outputs dataclass for resilient batch access to optional fields with dot operator access
+- Associate model outputs with input row id to categorise and measure correlation of metrics
+- Structured JSON metric exports for modularised records
+
+</details>
+
+## v0.7
+<details>
+<summary><b>v0.7.0 CLI &amp Config Consolidation</b></summary>
 
 - Add config/env value overrides to train app
 - Move code-as-config module from root to src, allow config value overrides from CLI via option flags

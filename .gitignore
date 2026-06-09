@@ -17,6 +17,7 @@ models/
 notes.md
 pyrightconfig.json
 temp/
+.temp/
 temp0/
 temp1/
 build/
