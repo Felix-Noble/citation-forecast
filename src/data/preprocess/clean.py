@@ -88,6 +88,11 @@ def main(
 
     ## MEDIUM
     if level > 1:
+        lf = lf.with_columns(
+                pl.col(col).str.to_lowercase().alias(col)
+                )
+    # 
+    if level > 2:
     # std filtering
         lf = lf.with_columns(
             pl.col(col).str.len_chars().alias(f'{col}_len')
@@ -98,16 +103,24 @@ def main(
         high: float = mean + (std * 3)  
         low: float = max(mean - (std * 3), min_len)
         lf = lf.with_columns(
-            pl.when((pl.col(f'{col}_len') > low) & pl.col(f'{col}_len') < high)
+            pl.when((pl.col(f'{col}_len') > low))
             .then(pl.lit(None, dtype=lf.schema[col]))
             .otherwise(pl.col(col))
             .alias(col)
         )
+        if level > 3:
+            lf = lf.with_columns(
+                pl.when( pl.col(f'{col}_len') < high)
+                .then(pl.lit(None, dtype=lf.schema[col]))
+                .otherwise(pl.col(col))
+                .alias(col)
+            )
+
         lf = lf.drop(f'{col}_len')
 
     ## HIGH
     # content ends filtering 
-    if level > 2:
+    if level > 4:
         lf = lf.filter(pl.col(col).str.ends_with('.'))
 
     return lf
