@@ -149,11 +149,16 @@ Data pre-processing CLI and custom PyTorch Datasets/Loaders forming a flexible E
 
 </details>
 
-
 <details>
-<summary><b>v0.5.3 Modal CPU service</b></summary>
+<summary><b>v0.5.3 Efficiency, Control &amp Clean update </b></summary>
 
-- Add modal CPU service for short prompt inference
+- More efficient best accuracy calculations across a smaller range & no. of values 
+- Train loop can load mlflow stored checkpoints & set parent run via CLI args
+- Dataset formatting classes available via registry in CLI / config
+- Dataset kwargs specified in CLI / config for flexible dataset initialisation
+- Polars max threads, and compile mode determined by CLI args
+- Learning rate scheduler args determined by config 
+- New lowercase clean method for string columns
 
 </details>
 
