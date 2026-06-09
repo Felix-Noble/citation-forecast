@@ -1,6 +1,5 @@
 import os
 os.environ['TOKENIZERS_PARALLELISM'] = 'true'
-os.environ["POLARS_MAX_THREADS"] = "32"
 from config import config
 from src.data.preprocess import clean_step, tokenise_step
 from src.utils.logging import setup_logger
@@ -12,53 +11,11 @@ import json
 import typer 
 import shutil
 from pathlib import Path
-import polars as pl
 from logging import getLogger
 
 logger = getLogger(Path(__file__).stem)
 _ = setup_logger(logger, config.logging)
 app = typer.Typer(pretty_exceptions_enable=False)
-
-def value_alternator(n: int = 2):
-    i = 0 
-    while True:
-        yield i
-        i += 1
-        if i >= n:
-            i = 0
-
-def measure_lf(lf: pl.LazyFrame) -> int:
-    return lf.select(pl.len()).collect(engine='streaming').item()
-
-def export_parquet(
-    lf: pl.LazyFrame,
-    destination: Path,
-    n_partitions: int,
-    progress_bar: Progress | None=None,
-    progress_task: TaskID | None=None,
-    compression_level: int = 1,
-) -> None:
-
-    n_rows = measure_lf(lf)
-    rows_per_part = math.ceil( n_rows / n_partitions )
-
-    lf = lf.with_row_index("idx").with_columns(
-    (pl.col("idx") // rows_per_part).clip(0, n_partitions - 1).alias("part")
-    )
-    # 3. Sink each part
-    for i in range(n_partitions):
-        (
-            lf.filter(pl.col("part") == i)
-                .drop(["idx", "part"])
-                .sink_parquet(
-                    destination / f"part_{i}.parquet",
-                    statistics=True,
-                    compression='zstd',
-                    compression_level=compression_level
-                )
-        ) 
-        if progress_bar is not None and progress_task is not None:
-            progress_bar.update(progress_task, advance=rows_per_part)
 
 @app.callback(invoke_without_command=True)
 def main(
@@ -152,12 +109,17 @@ def main(
     replace_non_permissive_cols: list[str] = typer.Option(
             [],
             '--replace-non-permissive-col',
-            help='Replace non-permissively licensed col with corresponding val entry'
+            help=f'Replace non-permissively licensed col with {None}'
             ),
     dry_run: bool = typer.Option(
             False,
             '--dry-run',
             help = 'Test/Dry run with 500 sample slice of data',
+            ),
+    max_threads: int = typer.Option(
+            8,
+            '--max-threads',
+            help='Max threads to use, e.g. polars env variable'
             ),
     clear_temp: bool = typer.Option(
             True,
@@ -173,6 +135,50 @@ def main(
 
     try:
         # Setup
+        os.environ["POLARS_MAX_THREADS"] = f'{max_threads}'
+        import polars as pl
+        def value_alternator(n: int = 2):
+            i = 0 
+            while True:
+                yield i
+                i += 1
+                if i >= n:
+                    i = 0
+
+        def measure_lf(lf: pl.LazyFrame) -> int:
+            return lf.select(pl.len()).collect(engine='streaming').item()
+
+        def export_parquet(
+            lf: pl.LazyFrame,
+            destination: Path,
+            n_partitions: int,
+            progress_bar: Progress | None=None,
+            progress_task: TaskID | None=None,
+            compression_level: int = 1,
+        ) -> None:
+
+            n_rows = measure_lf(lf)
+            rows_per_part = math.ceil( n_rows / n_partitions )
+
+            lf = lf.with_row_index("idx").with_columns(
+            (pl.col("idx") // rows_per_part).clip(0, n_partitions - 1).alias("part")
+            )
+            # 3. Sink each part
+            for i in range(n_partitions):
+                (
+                    lf.filter(pl.col("part") == i)
+                        .drop(["idx", "part"])
+                        .sink_parquet(
+                            destination / f"part_{i}.parquet",
+                            statistics=True,
+                            compression='zstd',
+                            compression_level=compression_level
+                        )
+                ) 
+                if progress_bar is not None and progress_task is not None:
+                    progress_bar.update(progress_task, advance=rows_per_part)
+
+
         if not name:
             destination = Path(origin).parent / f'{str(Path(origin).stem)}_preprocessed'
         else:

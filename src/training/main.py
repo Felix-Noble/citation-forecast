@@ -16,6 +16,7 @@ from .callbacks import isnan_async
 from .tracking import MetricTracker, BinaryClassificationTracker, log_params, log_lrs
 
 import torch
+import ast
 import os
 import typer
 from contextlib import nullcontext
@@ -42,10 +43,15 @@ def main(
         '--suffix', '-s',
         help = 'MLflow run suffix (to model name)'
         ),
-    compile: bool=typer.Option(
-        False,
-        '--compile/--no-compile', '-c',
+    compile: str=typer.Option(
+        '',
+        '--compile', '-c',
         help = 'compile model'
+        ),
+    fullgraph: bool = typer.Option(
+        False,
+        '--fullgraph',
+        help='Require fullgraph during compilation'
         ),
     load_id: str = typer.Option(
         '',
@@ -90,9 +96,11 @@ def main(
     device: torch.device = torch.device('cuda') if torch.cuda.is_available() and gpu else torch.device('cpu')
     assert ((device == torch.device('cuda')) or not gpu), 'No GPU available on this device, use --no-gpu option'
     assert (load_id and load_epoch) or (not load_epoch and not load_id), 'load id/epoch only work together'
+
     model = build_model(device=device)
     start_epoch: int =  start_epoch if start_epoch else (load_epoch + 1 if load_epoch else 1) 
     TEMP_DIR: Path = Path('./temp/checkpoints') / load_id 
+    dataset_kwargs: dict = ast.literal_eval(config.train.dataset_kwargs)
 
     if run_suffix:
         run_name = config.model.model_name + '-' + str(run_suffix)
@@ -101,7 +109,7 @@ def main(
 
     logger.info(f'Run: "{run_name}" (Model: {config.model.model_name}) | Device: {device}{" | DRY-RUN" if dry_run else ""}')
     if compile:
-        model.compile(fullgraph=False, mode='default')
+        model.compile(fullgraph=fullgraph, mode=compile)
 
     loss_fn = build_loss()
     optimizer = build_optimizer(
@@ -120,7 +128,7 @@ def main(
     train_dataset = build_dataset(
         data_path=str(env.STAGED_LOC / config.train.train_dataset),
         dataset=config.train.dataset_class,
-        X=['title_tokens', 'abstract_tokens'],
+        X=['field_name_tokens', 'subfield_name_tokens', 'title_tokens', 'abstract_tokens'],
         y=['citation_normalized_percentile'],
         t_start=config.train.train_start,
         t_end=config.train.train_end,
@@ -132,13 +140,13 @@ def main(
         dry_run=dry_run,
         name='train-dataset',
         auto_remove=True,
-        **config.train.dataset_kwargs
+        **dataset_kwargs
     )
 
     test_dataset = build_dataset(
         data_path=str(env.STAGED_LOC / config.train.test_dataset),
         dataset=config.train.dataset_class,
-        X=['title_tokens', 'abstract_tokens'],
+        X=['field_name_tokens', 'subfield_name_tokens', 'title_tokens', 'abstract_tokens'],
         y=['citation_normalized_percentile'],
         t_start=config.train.test_start,
         t_end=config.train.test_end,
@@ -149,7 +157,7 @@ def main(
         dry_run=dry_run,
         name='test-dataset',
         auto_remove=True,
-        **config.train.dataset_kwargs
+        **dataset_kwargs
     )
 
     examples_per_epoch = len(train_dataset) # update this for when sampling is introduced
@@ -214,35 +222,40 @@ def main(
         epochs_done = epoch_progress.add_task('Epochs', total=config.train.epochs)
         examples_done = example_progress.add_task('Train Examples', total=len(train_dataloader) * config.train.batch_size)
         eval_examples_done = eval_example_progress.add_task('Eval Examples', total=len(test_dataloader) * config.train.batch_size)
+
         for epoch in range(start_epoch, start_epoch + config.train.epochs + 1):
+
+            log_lrs(scheduler, epoch) 
             model.train()
 
             example_progress.reset(examples_done, description='Train examps', total=len(train_dataloader) * config.train.batch_size)
             eval_example_progress.reset(examples_done, description='Eval examps', total=len(test_dataloader) * config.train.batch_size)
 
             for batch_i, (X, y, mask, weight) in enumerate(train_dataloader):
-                metric_tracker.process_values((y,), ('train_y',))
+                metric_tracker.process_values((y.clone(),), ('train_y',))
                 with stream_context:
                     X = X.to(device, non_blocking=True)
                     y = y.to(device, non_blocking=True)
                     mask = mask.to(device, non_blocking=True)
                 stream_sync()
 
+                torch.compiler.cudagraph_mark_step_begin()
                 logits, probs, sigma = model(X, mask)
                 loss = loss_fn(weight=weight, logits=logits, probs=probs, sigma=sigma, target=y)
-                loss_cpu = loss.detach().item()
-                sigma_cpu = torch.mean(sigma.detach()).item() 
-
+      
                 loss = loss / grad_accumulation_steps_gpu 
 
                 loss.backward()
-                if batch_i % config.train.grad_accumulation_steps == 0 or batch_i == n_batches:
+                if (batch_i + 1) % config.train.grad_accumulation_steps == 0 or batch_i == n_batches:
                     optimizer.step()
-                    optimizer.zero_grad() 
+                    optimizer.zero_grad(set_to_none=True) 
+
+                loss_cpu = loss.detach().clone().item()
+                sigma_cpu = torch.mean(sigma.detach().clone()).item() 
 
                 metric_tracker.log_metric('train_loss', loss_cpu, X.shape[0])
                 metric_tracker.log_metric('train_sigma', sigma_cpu, X.shape[0])
-                metric_tracker.process_values((logits.detach(), probs.detach()), ('train_logits', 'train_probs'))
+                metric_tracker.process_values((logits.detach().clone(), probs.detach().clone()), ('train_logits', 'train_probs'))
                 executor.submit(isnan_async, loss_cpu, logger)
                 mlflow.log_metric('train_loss-batch', loss_cpu, synchronous=False, step=int((epoch-1) * examples_per_epoch + batch_i * config.train.batch_size))
 
@@ -257,7 +270,6 @@ def main(
                 mlflow.log_artifact(save_path)
                 # save model state and run id, load each on restart (pass as option)
             
-            log_lrs(scheduler, epoch) 
             scheduler.step() 
 
             if epoch % config.train.eval_interval == 0:

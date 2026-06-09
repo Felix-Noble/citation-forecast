@@ -14,7 +14,7 @@ def build_lr_scheduler(
 
     warmup_scheduler = torch.optim.lr_scheduler.LinearLR(
         optimizer, 
-        start_factor=0.01, 
+        start_factor=config.train.warmup_start_factor, 
         end_factor=1.0,
         total_iters=milestones[0],
         last_epoch=-1 # Used to implement restart from checkpoint
@@ -22,20 +22,16 @@ def build_lr_scheduler(
 
     cosine_oscilating_scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
         optimizer,
-        T_0=20,
+        T_0=config.train.epochs - config.train.lr_milestones[0],
         T_mult=1,
-        eta_min=config.train.lr * 0.999,
+        eta_min=config.train.lr_eta_min,
         last_epoch=-1, # Used to implement restart from checkpoint
     )
 
-    exponential_scheduler = torch.optim.lr_scheduler.ExponentialLR(
-        optimizer, 
-        gamma=0.98,
-    )
-    schedulers = [warmup_scheduler, cosine_oscilating_scheduler, exponential_scheduler]
+    schedulers = [warmup_scheduler, cosine_oscilating_scheduler ]
     milestones = list(milestones)
     for i, milestone in enumerate(milestones):
-        if milestone < 0:
+        if milestone < 1:
             _ = milestones.pop(i)
             _ = schedulers.pop(i)
 
