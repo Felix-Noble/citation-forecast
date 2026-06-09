@@ -1,7 +1,7 @@
 from ..losses.wasserstein import wasserstein_loss
 from ..losses.entropy import norm_entropy_loss
 from ..losses.wasserstein_entropy import WassersteinEntropyLoss
-from typing import NamedTuple
+from typing import NamedTuple, Literal
 from dataclasses import dataclass
 import pandas as pd
 from rich.table import Table
@@ -60,15 +60,15 @@ class MetricTracker:
                  dtype: torch.dtype,
                  device: torch.device,
                  config: Config,
-                 export_loc: Path | bool=False,
+                 export_loc: Path | Literal[False]=False,
                  buffer: bool = False,
                  ):
 
-        self.dtype = dtype
+        self.dtype: torch.dtype = dtype
         self.device: torch.device = device
-        self.config = config
-        self.buffer = buffer
-        self.export_loc = export_loc
+        self.config: Config = config
+        self.buffer: bool = buffer
+        self.export_loc: Path | Literal[False] = export_loc
         self.store_params: dict[str, StoreParams] = {params.name: params for params in store_params}
         self.stores: dict[str, Store] = {params.name: self._init_store(params) for params in store_params}
         
@@ -150,7 +150,7 @@ class MetricTracker:
     def _gather_store(self, 
                       store: Store | None=None,
                       store_name: str | None=None,
-                      ) -> torch.Tensor:
+                      ) -> torch.Tensor | None:
         """Concatenates and flattens all stored buffers 
 
         out shape: (batch, *output_shape)
@@ -165,14 +165,14 @@ class MetricTracker:
         
         if len(store.store) > 0: 
             all_values: torch.Tensor = torch.concatenate(store.store)
-            if self.export_loc:
+            if self.export_loc and not isinstance(self.export_loc, bool):
                 os.makedirs(self.export_loc, exist_ok=True)
                 np.save( self.export_loc / store.name, all_values.numpy() )   
-            self._reset_store(store)
+            _ = self._reset_store(store)
             return all_values
         else:
             logger.error(f'Store {store.name} contains no values, resetting')
-            self._reset_store(store)
+            _ = self._reset_store(store)
 
     def log_metric(self,
                     name: str,
