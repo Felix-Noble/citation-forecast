@@ -1,5 +1,5 @@
 from config import Config, config
-from src.training.tracking import BinaryClassificationTracker
+from src.training.tracking import BinaryClassificationTracker, MetricTracker
 from src.training.tracking.metric_tracker import StoreParams
 import torch
 
@@ -8,7 +8,7 @@ def build_eval_tracker(
         dtype: torch.dtype,
         config: Config,
         **kwargs,
-                  ) -> BinaryClassificationTracker:
+                  ) -> MetricTracker:
        param_tuple = (
             build_tracker_params(name='test_ids', device=device),
             build_tracker_params(name='test_logits', device=device),
@@ -16,7 +16,7 @@ def build_eval_tracker(
             build_tracker_params(name='test_y', device=torch.device('cpu')),
             build_tracker_params(name='test_loss', device=device),
                ) 
-       metric_tracker = BinaryClassificationTracker(
+       metric_tracker = MetricTracker(
                 param_tuple,
                 dtype=dtype,
                 config=config,
@@ -30,7 +30,7 @@ def build_train_tracker(
         dtype: torch.dtype,
         config: Config,
         **kwargs,
-                  ) -> BinaryClassificationTracker:
+                  ) -> MetricTracker:
     param_tuple = (
             build_tracker_params(name='test_ids', device=device),
             build_tracker_params(name='train_logits', device=device),
@@ -44,7 +44,7 @@ def build_train_tracker(
             build_tracker_params(name='test_y', device=torch.device('cpu')),
             build_tracker_params(name='test_loss', device=device),
             )
-    metric_tracker = BinaryClassificationTracker(
+    metric_tracker = MetricTracker(
         param_tuple,
         dtype=dtype,
         config=config,
