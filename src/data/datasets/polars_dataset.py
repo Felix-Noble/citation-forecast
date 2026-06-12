@@ -7,7 +7,7 @@ from typing import override
 from dataclasses import dataclass
 import torch.nn as nn
 import torch
-from torch import Tensor
+from torch import Tensor, tensor
 from torch.utils.data import Dataset
 
 from config import Config, config, env
@@ -19,21 +19,22 @@ _ = setup_logger(logger, config.logging)
 
 @dataclass
 class Output:
-    id: Tensor | None = None
-    x: Tensor | None = None
-    y: Tensor | None = None
-    weight: Tensor | None = None
-    mask: Tensor | None = None
+    id: Tensor = tensor(float('nan'))
+    x: Tensor = tensor(float('nan'))
+    y: Tensor = tensor(float('nan'))
+    weight: Tensor = tensor(float('nan'))
+    mask: Tensor = tensor(float('nan'))
 
 class PolarsDataset(Dataset[tuple[Tensor, ...]]):
     def __init__(self, 
                  data_path: str,
                  X: str | list[str],
                  y: str | list[str],
-                 t_start: date,
-                 t_end: date,
+                 t_start: date | None,
+                 t_end: date | None,
                  max_len: int,
                  weights: list[float] | None=None,
+                 time_filter: bool=False,
                  time_col: str = 'publication_date',
                  return_id: bool = False,
                  id_col: str = 'id',
@@ -57,9 +58,9 @@ class PolarsDataset(Dataset[tuple[Tensor, ...]]):
             self.y: list[str] = [y]
         else:
             self.y = y
-        columns = self.x + self.y 
+        columns = list(set(self.x + self.y))
         
-        if time_col:
+        if time_filter:
             columns += [ time_col ]        
         if return_id:
             columns += id_col
@@ -70,7 +71,7 @@ class PolarsDataset(Dataset[tuple[Tensor, ...]]):
         self.time_col = time_col
         self.return_id = return_id 
         self.id_col = id_col
-        self.MAX_LEN: int = max_len 
+        self.max_len: int = max_len 
         self.PAD_VALUE: int = config.model.pad_token_id
         self.N_BUCKETS: int = config.model.n_out
         self.PAD: bool = pad
@@ -95,11 +96,15 @@ class PolarsDataset(Dataset[tuple[Tensor, ...]]):
             lf: pl.LazyFrame = (
                     pl.scan_parquet(files)
                     .select(columns)
-                    .filter((pl.col(self.time_col) >= self.t_start) & (pl.col(self.time_col) < self.t_end))
                     )
 
+            if self.t_start is not None and time_filter:
+                    lf = lf.filter((pl.col(self.time_col) >= self.t_start))
+            if self.t_end is not None and time_filter:
+                    lf = lf.filter(pl.col(self.time_col) < self.t_end) 
+
             if dry_run:
-                lf = lf.slice(0, (config.train.batch_size * 3) - 1)
+                lf = lf.slice(0, (config.train.batch_size * 3))
  
             lf = lf.drop_nulls(columns)
 
@@ -120,14 +125,15 @@ class PolarsDataset(Dataset[tuple[Tensor, ...]]):
                                 total_len = pl.col('total_len') + pl.col(col).list.len()
                                 )
                 lf = lf.filter(
-                        pl.col('total_len') <= self.MAX_LEN
+                        pl.col('total_len') <= self.max_len
                         )
                 lf = lf.drop('total_len')
 
-            lf = lf.drop([self.time_col]) 
+            if time_filter:
+                lf = lf.drop([self.time_col]) 
             
             rows = lf.select(pl.len()).collect(engine='streaming').item()
-            logger.info(f'Saving {rows:,} rows where summed length of {self.x} <= {self.MAX_LEN} to hotpath: {self.name}')
+            logger.info(f'Saving {rows:,} rows where summed length of {self.x} <= {self.max_len} to hotpath: {self.name}')
             
             lf.select(self.x).sink_ipc(self.x_hot_path)
             lf.select(self.y).sink_ipc(self.y_hot_path)
@@ -150,7 +156,7 @@ class PolarsDataset(Dataset[tuple[Tensor, ...]]):
         return y
    
     @override
-    def __getitem__(self, idx: int) -> Output:
+    def __getitem__(self, idx: int):
         out: Output = Output()
 
         # X (input)
@@ -158,18 +164,19 @@ class PolarsDataset(Dataset[tuple[Tensor, ...]]):
         x: Tensor = torch.cat(
             [torch.tensor(token_list) for token_list in x_row]
             ).flatten()
-        if self.PAD and x.size(0) < self.MAX_LEN:
-            x = nn.functional.pad(x, (0, self.MAX_LEN - x.size(0)), value=self.PAD_VALUE)
-        if self.TRUNCATE == True & x.size(0) > self.MAX_LEN:
-            x = x[:self.MAX_LEN]
-       
+
         x = self._format_x(x)
+        if self.PAD and x.size(0) < self.max_len:
+            x = nn.functional.pad(x, (0, self.max_len - x.size(0)), value=self.PAD_VALUE)
+        if self.TRUNCATE == True & x.size(0) > self.max_len:
+            x = x[:self.max_len]
+       
         out.x = x
 
         # y (target)
         if self.y:
             y_row: tuple[list[int], ...] = self.df_y.row(idx)
-            y: Tensor = torch.tensor(
+            y: Tensor = torch.cat(
                 [torch.tensor(target, dtype=torch.float32) for target in y_row]
                 ).flatten()
             y = self._format_y(y)
@@ -188,7 +195,7 @@ class PolarsDataset(Dataset[tuple[Tensor, ...]]):
             out.weight = weight
 
         if self.RETURN_MASK:
-            mask = (x != self.PAD_VALUE).bool().unsqueeze(0).expand(self.MAX_LEN, -1)
+            mask = (x != self.PAD_VALUE).bool().unsqueeze(0).expand(self.max_len, -1)
             out.mask = mask
 
-        return out
+        return out.__dict__
