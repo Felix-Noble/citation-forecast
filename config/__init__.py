@@ -11,7 +11,6 @@ __all__ = [
         ]
 
 # Safety checks
-
 if config.train.sample is not None and config.train.shuffle:
     raise ValueError('trian.shuffle and train.sample cannot both be true')
 
