@@ -132,7 +132,8 @@ class MetricTracker:
         if torch.any(torch.isnan(value)):
             logger.error(f'NaN values passed to process_value, not writing to buffer store {store if isinstance(store, str) else store.name}')
             return
-        
+        print('value', store.name, value) 
+
         if self.buffer:
             buffer_full = store.buffer_cursor >= store.buffer.size(0) 
             if buffer_full:
@@ -211,28 +212,19 @@ class MetricTracker:
             logger.error(e)
 
     def calc_metrics(self, 
+                step: int,
                 prefix: str = "",
                 ) -> None:
         try:
-            self.head_out = self._gather_store(store_name=f'{prefix}_logits')
-            
-            logits, sigma = head_out[:, :-1], head_out[:, -1]
-            sigma = torch.nn.functional.softplus(sigma)
-
+            logits = self._gather_store(store_name=f'{prefix}_logits')
             probs = torch.softmax(logits, dim=-1)
 
             preds = torch.argmax(
                 probs,
                 dim=-1,
             ).unsqueeze(-1)
+            y_true = self._gather_store(store_name=f'{prefix}_y')
 
-            y_true_one_hot = self._gather_store(store_name=f'{prefix}_y')
-
-            y_true_smoothed = WassersteinEntropyLoss.smooth_one_hot(y_true_one_hot, sigma)
-            y_true = torch.argmax(
-                    y_true_one_hot,
-                    dim=1
-                    ) 
         except Exception as e:
             logger.error(e)
             return
@@ -242,7 +234,7 @@ class MetricTracker:
             return
 
         try:
-            mae = mean_absolute_error(y_true_one_hot, probs)
+            mae = mean_absolute_error(torch.nn.functional.one_hot(y_true), probs)
             self.log_metric(f'{prefix}_MAE', mae, preds.shape[0])
         except Exception as e:
             logger.error(e)
@@ -253,11 +245,6 @@ class MetricTracker:
         except Exception as e:
             logger.error(e)
 
-        try:
-            wasserstein_dist = wasserstein_loss(probs, y_true_smoothed)
-            self.log_metric(f'{prefix}_wasserstein_distance', wasserstein_dist.item(), preds.shape[0])
-        except Exception as e:
-            logger.error(e)
 
         try:
             balanced_accuracy = balanced_accuracy_score(y_true, preds)
@@ -287,14 +274,18 @@ class MetricTracker:
         except Exception as e:
             logger.error(e)
 
-
     def _aggregate_metrics(self) -> dict[str, float]:
         " Aggregates metrics stored as named tuples "
         aggregate_metrics = {k: float('nan') for k in self.metric_store.keys()} 
         for metric in aggregate_metrics.keys():
+            print('metric', metric)
             df: pd.DataFrame = pd.DataFrame(self.metric_store[metric])
-            score: float = (df['score'] * df['weight']).sum() / (df['weight'].sum())
-            aggregate_metrics[metric] = round(score, 6)
+            print('df', df.shape)
+            print(df)
+            score = (df['score'] * df['weight']).sum() / (df['weight'].sum())
+            print(score)
+            if not math.isnan(score):
+                aggregate_metrics[metric] = round(score, 6)
         aggregate_metrics = {k: v for k,v in aggregate_metrics.items() if not math.isnan(v)} 
         return aggregate_metrics 
 
