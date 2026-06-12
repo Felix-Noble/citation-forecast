@@ -5,7 +5,7 @@ from pathlib import Path
 @dataclass(frozen=True)
 class Env:
     TRACKING_URI: str = "http://127.0.0.1:5000"
-    EXPERIMENT: str = 'AF_Social-Sciences'
+    EXPERIMENT: str = 'NG-Generative'
     RAW_LOC: Path = Path('/home/fnoble/data/OpenAlex-parquet/')
-    STAGED_LOC: Path = Path('/home/fnoble/Data/staged/')
+    STAGED_LOC: Path = Path('/home/fnoble/data/')
     ARTIFACT_LOC: str = '/home/fnoble/experiment-tracking/artifacts'

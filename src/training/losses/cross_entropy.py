@@ -16,6 +16,4 @@ class CrossEntropyLoss(nn.CrossEntropyLoss):
             target: Tensor,
             **kwargs
             ) -> Tensor:
-        print('probs', probs.shape) 
-        print('target', target.shape) 
         return self.torch_ce_loss(input=probs, target=target.squeeze(-1))

@@ -132,7 +132,6 @@ class MetricTracker:
         if torch.any(torch.isnan(value)):
             logger.error(f'NaN values passed to process_value, not writing to buffer store {store if isinstance(store, str) else store.name}')
             return
-        print('value', store.name, value) 
 
         if self.buffer:
             buffer_full = store.buffer_cursor >= store.buffer.size(0) 
@@ -278,12 +277,8 @@ class MetricTracker:
         " Aggregates metrics stored as named tuples "
         aggregate_metrics = {k: float('nan') for k in self.metric_store.keys()} 
         for metric in aggregate_metrics.keys():
-            print('metric', metric)
             df: pd.DataFrame = pd.DataFrame(self.metric_store[metric])
-            print('df', df.shape)
-            print(df)
             score = (df['score'] * df['weight']).sum() / (df['weight'].sum())
-            print(score)
             if not math.isnan(score):
                 aggregate_metrics[metric] = round(score, 6)
         aggregate_metrics = {k: v for k,v in aggregate_metrics.items() if not math.isnan(v)} 
