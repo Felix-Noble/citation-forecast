@@ -11,6 +11,7 @@ from src.builders import \
         build_optimizer
 from src.data import PortionSampler 
 from src.data.datasets import BinaryCategoricalDataset, OrdinalDataset
+from src.data.datasets.polars_dataset import Output
 from .eval import eval_model
 from .callbacks import isnan_async
 from .tracking import MetricTracker, BinaryClassificationTracker, log_params, log_lrs
@@ -128,8 +129,8 @@ def main(
     train_dataset = build_dataset(
         data_path=str(env.STAGED_LOC / config.train.train_dataset),
         dataset=config.train.dataset_class,
-        X=['field_name_tokens', 'subfield_name_tokens', 'title_tokens', 'abstract_tokens'],
-        y=['citation_normalized_percentile'],
+        X=['full_text_tokens'],
+        y=['full_text_tokens'],
         t_start=config.train.train_start,
         t_end=config.train.train_end,
         weights=config.train.loss.weights,
@@ -146,8 +147,8 @@ def main(
     test_dataset = build_dataset(
         data_path=str(env.STAGED_LOC / config.train.test_dataset),
         dataset=config.train.dataset_class,
-        X=['field_name_tokens', 'subfield_name_tokens', 'title_tokens', 'abstract_tokens'],
-        y=['citation_normalized_percentile'],
+        X=['full_text_tokens'],
+        y=['full_text_tokens'],
         t_start=config.train.test_start,
         t_end=config.train.test_end,
         config=config,
@@ -222,7 +223,6 @@ def main(
         epochs_done = epoch_progress.add_task('Epochs', total=config.train.epochs)
         examples_done = example_progress.add_task('Train Examples', total=len(train_dataloader) * config.train.batch_size)
         eval_examples_done = eval_example_progress.add_task('Eval Examples', total=len(test_dataloader) * config.train.batch_size)
-
         for epoch in range(start_epoch, start_epoch + config.train.epochs + 1):
 
             log_lrs(scheduler, epoch) 
@@ -231,30 +231,28 @@ def main(
             example_progress.reset(examples_done, description='Train examps', total=len(train_dataloader) * config.train.batch_size)
             eval_example_progress.reset(examples_done, description='Eval examps', total=len(test_dataloader) * config.train.batch_size)
 
-            for batch_i, (X, y, mask, weight) in enumerate(train_dataloader):
-                metric_tracker.process_values((y.clone(),), ('train_y',))
+            for batch_i, batch_dict in enumerate(train_dataloader):
+                batch = Output(**batch_dict)
+                metric_tracker.process_values((batch.y.clone(),), ('train_y',))
                 with stream_context:
-                    X = X.to(device, non_blocking=True)
-                    y = y.to(device, non_blocking=True)
-                    mask = mask.to(device, non_blocking=True)
+                    x = batch.x.to(device, non_blocking=True)
+                    y = batch.y.to(device, non_blocking=True)
+                    mask = batch.mask.to(device, non_blocking=True)
                 stream_sync()
 
                 torch.compiler.cudagraph_mark_step_begin()
-                logits, probs, sigma = model(X, mask)
-                loss = loss_fn(weight=weight, logits=logits, probs=probs, sigma=sigma, target=y)
-      
+                logits, probs = model(x, mask)
+                loss = loss_fn(weight=batch.weight, logits=logits, probs=probs, target=y)
                 loss = loss / grad_accumulation_steps_gpu 
-
+               
                 loss.backward()
                 if (batch_i + 1) % config.train.grad_accumulation_steps == 0 or batch_i == n_batches:
                     optimizer.step()
                     optimizer.zero_grad(set_to_none=True) 
 
                 loss_cpu = loss.detach().clone().item()
-                sigma_cpu = torch.mean(sigma.detach().clone()).item() 
 
-                metric_tracker.log_metric('train_loss', loss_cpu, X.shape[0])
-                metric_tracker.log_metric('train_sigma', sigma_cpu, X.shape[0])
+                metric_tracker.log_metric('train_loss', loss_cpu, x.shape[0])
                 metric_tracker.process_values((logits.detach().clone(), probs.detach().clone()), ('train_logits', 'train_probs'))
                 executor.submit(isnan_async, loss_cpu, logger)
                 mlflow.log_metric('train_loss-batch', loss_cpu, synchronous=False, step=int((epoch-1) * examples_per_epoch + batch_i * config.train.batch_size))
