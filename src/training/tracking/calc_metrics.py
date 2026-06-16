@@ -8,6 +8,6 @@ def calc_metrics(config: Config, probs: Tensor, targets: Tensor) -> dict[str, Te
     metrics['entropy'] = norm_entropy_loss(probs)
      
     target_ont_hot: Tensor = torch.nn.functional.one_hot(targets, num_classes=config.model.n_out)
-    metrics['mae'] = torch.sum(torch.abs(target_ont_hot - probs)) / (sum(probs.shape[:2]) * config.model.n_out) # normalised mean absolute error
+    metrics['mae'] = torch.mean(torch.abs(target_ont_hot - probs)) # normalised mean absolute error
 
     return metrics
