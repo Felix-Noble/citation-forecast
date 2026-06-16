@@ -1,9 +1,17 @@
 # src/builders/build_dataloader.py
+from signal import valid_signals
 from config import Config, config
+from src.utils.logging import setup_logger
 import torch
 from torch import Tensor
 from torch.utils.data import Dataset, DataLoader
 from torch.nn.utils.rnn import pad_sequence
+from pathlib import Path
+import logging
+from logging import getLogger
+
+logger = getLogger(Path(__file__).stem)
+_ = setup_logger(logger, config.logging)
 
 def build_dataloader(
     dataset: Dataset[tuple[Tensor, ...] | Tensor],
@@ -39,11 +47,18 @@ def build_dataloader(
             return X, y, mask 
         return X, y
 
+    if logger.isEnabledFor(logging.DEBUG):
+        num_workers = 1
+        prefetch_factor = None
+    else:
+        num_workers = 2
+        prefetch_factor = 4
+
     dataloader = DataLoader(
         dataset,
         batch_size=config.train.batch_size,
-        num_workers=3,
-        prefetch_factor=4,
+        num_workers=num_workers,
+        prefetch_factor=prefetch_factor,
         persistent_workers=False,
         pin_memory=True,
         shuffle=shuffle,
