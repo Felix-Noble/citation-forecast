@@ -1,5 +1,6 @@
 from config import config, env
 from src.utils.logging import setup_logger
+from src.training.tracking import calc_metrics
 from src.builders import \
         build_dataset, \
         build_progress_bars, \
@@ -112,7 +113,7 @@ def main(
     if compile:
         model.compile(fullgraph=fullgraph, mode=compile)
 
-    loss_fn = build_loss()
+    loss_fn = build_loss(config)
     optimizer = build_optimizer(
         model.parameters(),
         lr = config.train.lr,
@@ -136,6 +137,7 @@ def main(
         weights=config.train.loss.weights,
         config=config,
         max_len=config.model.max_len,
+        truncate='',
         return_mask=True,
         pad=True,
         dry_run=dry_run,
@@ -153,6 +155,7 @@ def main(
         t_end=config.train.test_end,
         config=config,
         max_len=config.model.max_len_eval,
+        truncate='',
         return_mask=True,
         pad=True,
         dry_run=dry_run,
@@ -233,7 +236,7 @@ def main(
 
             for batch_i, batch_dict in enumerate(train_dataloader):
                 batch = Output(**batch_dict)
-                metric_tracker.process_values((batch.y.clone(),), ('train_y',))
+                #metric_tracker.process_values((batch.y.clone(),), ('train_y',))
                 with stream_context:
                     x = batch.x.to(device, non_blocking=True)
                     y = batch.y.to(device, non_blocking=True)
@@ -241,8 +244,10 @@ def main(
                 stream_sync()
 
                 torch.compiler.cudagraph_mark_step_begin()
-                logits, probs = model(x, mask)
+                logits, probs = model.forward(x, mask)
                 loss = loss_fn(weight=batch.weight, logits=logits, probs=probs, target=y)
+
+                loss_cpu = loss.detach().clone()
                 loss = loss / grad_accumulation_steps_gpu 
                
                 loss.backward()
@@ -250,12 +255,17 @@ def main(
                     optimizer.step()
                     optimizer.zero_grad(set_to_none=True) 
 
-                loss_cpu = loss.detach().clone().item()
-
+                loss_cpu = loss_cpu.item()
                 metric_tracker.log_metric('train_loss', loss_cpu, x.shape[0])
-                metric_tracker.process_values((logits.detach().clone(), probs.detach().clone()), ('train_logits', 'train_probs'))
+                                #metric_tracker.process_values((logits.detach().clone(), probs.detach().clone()), ('train_logits', 'train_probs'))
                 executor.submit(isnan_async, loss_cpu, logger)
                 mlflow.log_metric('train_loss-batch', loss_cpu, synchronous=False, step=int((epoch-1) * examples_per_epoch + batch_i * config.train.batch_size))
+                
+                metrics: dict[str, torch.Tensor] = calc_metrics(config=config, probs=probs, targets=y)
+                for k, v in metrics.items():
+                    metric_tracker.log_metric(f'train_{k}', v.item(), x.shape[0])
+
+                del loss_cpu, metrics, probs
 
                 example_progress.update(examples_done, advance=config.train.batch_size)
 
@@ -283,14 +293,14 @@ def main(
                     device=device,
                         )
                 _ = metric_tracker.calc_metrics(
-                    prefix='test',
-                    step=epoch,
-                )
-
-            _ = metric_tracker.calc_metrics(
-                prefix='train',
+                prefix='test',
                 step=epoch,
+                )
+            _ = metric_tracker.calc_metrics(
+            prefix='train',
+            step=epoch,
             )
+
             metrics = metric_tracker.report(
                 progress_bar=epoch_progress, 
                 epoch=epoch,
