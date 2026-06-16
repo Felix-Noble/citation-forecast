@@ -8,7 +8,7 @@ class PortionSampler(torch.utils.data.Sampler):
 
     def __iter__(self):
         # Generate random indices for the whole dataset
-        indices = torch.randperm(len(self.dataset))
+        indices = torch.randint(0, len(self.dataset), (self.num_samples,))
         # Return only a slice of them
         return iter(indices[:self.num_samples].tolist())
 
