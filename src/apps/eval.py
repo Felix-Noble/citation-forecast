@@ -36,7 +36,6 @@ _ = setup_logger(logger, config.logging)
 app = typer.Typer(pretty_exceptions_enable=False)
 
 @app.callback(invoke_without_command=True)
-
 def main(
         model_name: str = typer.Option(
             '',
@@ -128,7 +127,7 @@ def main(
                 '--dry-run',
                 help='Dry run with subset of dataset'
                 ),
-    ctx: typer.Context = None,
+        ctx: typer.Context = None,
         ) -> None:
     # Required option checks 
     assert run_id, 'Provide a run id'
@@ -168,7 +167,6 @@ def main(
     stream_sync = torch.cuda.synchronize if torch.cuda.is_available() else lambda : None
     import torch._logging
     torch._logging.set_logs(all=logging.ERROR)
-
 
     logger.info(f'MLflow experiment: {EXPERIMENT}')
     
