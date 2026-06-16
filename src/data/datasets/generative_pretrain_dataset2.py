@@ -26,12 +26,13 @@ class Output:
     mask: Tensor = tensor(float('nan'))
 
 @dataset_registry
-class GenerativePretrainDataset(PolarsDataset):
+class GenerativePretrainDataset2(PolarsDataset):
     " Splits token column into two segments, input and predictions (non causal pre-training split) "
-    def __init__(self, n_forward: int, **kwargs):
+    def __init__(self, n_forward: int, n_backward: int, **kwargs):
         super().__init__(**kwargs)
         assert self.x == self.y or not self.y, 'Same column expected for input & target'
-        self.n_forward = n_forward # n. tokens to predict forward
+        self.n_forward: int = n_forward # n. tokens to predict forward
+        self.n_backward: int = n_backward # n. tokens to 'predict' backwards from end of seq
 
     def _gen_offset(self, length: int):
         upper = max(length - self.n_forward - 1, 0)
@@ -59,7 +60,7 @@ class GenerativePretrainDataset(PolarsDataset):
             [torch.tensor(target, dtype=torch.float32) for target in y_row]
             ).flatten()
 
-        y = y[truncate_offset + self.n_forward: offset + self.n_forward].long()
+        y = y[offset - self.n_backward: offset + self.n_forward].long()
 
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug(f'offset: {offset} | truncate offset: {truncate_offset} | max_len: {self.max_len} | pad: {self.PAD}')
@@ -69,9 +70,9 @@ class GenerativePretrainDataset(PolarsDataset):
             logger.debug(y)
 
         if self.PAD and x.size(0) < self.max_len:
-            x = nn.functional.pad(x, (0, self.max_len - x.size(0)), value=self.PAD_VALUE)
-        if self.PAD and y.size(0) < self.max_len:
-            y = nn.functional.pad(y, (0, self.max_len - y.size(0)), value=self.PAD_VALUE)
+            x = nn.functional.pad(x, (self.max_len - x.size(0), 0), value=self.PAD_VALUE)
+        if self.PAD and y.size(0) < self.n_forward + self.n_backward:
+            y = nn.functional.pad(y, (0, self.n_forward + self.n_backward - y.size(0)), value=self.PAD_VALUE)
 
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug('x-pad')

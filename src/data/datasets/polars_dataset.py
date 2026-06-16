@@ -40,7 +40,7 @@ class PolarsDataset(Dataset[tuple[Tensor, ...]]):
                  id_col: str = 'id',
                  config: Config = config,
                  pad: bool = False,
-                 truncate: bool | str = 'drop',
+                 truncate: str = 'drop',
                  return_mask: bool = False,
                  dry_run: bool = False,
                  name: str = 'dataset',
