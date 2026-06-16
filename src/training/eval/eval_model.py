@@ -1,4 +1,5 @@
 # src/training/eval/eval_model.py 
+from src.training.losses.entropy import norm_entropy_loss
 from ..tracking import BinaryClassificationTracker 
 from src.data.datasets.polars_dataset import Output
 from config import config
@@ -24,7 +25,7 @@ def eval_model(
         for batch_i, batch_dict in enumerate(dataloader):
             batch = Output(**batch_dict)
             y = batch.y
-            metric_tracker.process_values((y,), ('test_y',))
+            #metric_tracker.process_values((y,), ('test_y',))
             with stream_context:
                 x = batch.x.to(device, non_blocking=True)
                 y = y.to(device, non_blocking=True)
@@ -40,5 +41,7 @@ def eval_model(
             if not torch.any(torch.isnan(batch.id)):
                 metric_tracker.log_metric('test_id', batch.id, x.shape[0])
 
-            metric_tracker.process_values((logits.detach(), probs.detach()), ('test_logits', 'test_probs'))
+            #metric_tracker.process_values((logits.detach(), probs.detach()), ('test_logits', 'test_probs'))
             example_progress.update(examples_done, advance=config.train.batch_size)
+            #entropy = norm_entropy_loss(probs.detach().cpu())
+            #metric_tracker.log_metric('test_entropy', entropy.item(), x.shape[0])
