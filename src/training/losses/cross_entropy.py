@@ -5,15 +5,17 @@ import torch.nn as nn
 
 @loss_registry('CrossEntropyLoss')
 class CrossEntropyLoss(nn.CrossEntropyLoss):
-    def __init__(self):
+    def __init__(self, config):
         super().__init__()
-        self.torch_ce_loss = nn.CrossEntropyLoss()
+        self.torch_ce_loss: nn.CrossEntropyLoss = nn.CrossEntropyLoss(ignore_index=config.model.pad_token_id)
+        self.n_classes = config.model.n_out
 
     @override
     def __call__(
             self, 
-            probs: Tensor,
+            logits: Tensor,
             target: Tensor,
             **kwargs
             ) -> Tensor:
-        return self.torch_ce_loss(input=probs, target=target.squeeze(-1))
+        loss = self.torch_ce_loss(logits.view(-1, logits.size(-1)), target.view(-1))
+        return loss
