@@ -68,10 +68,11 @@ class MetricTracker:
 
         self.dtype: torch.dtype = dtype
         self.device: torch.device = device
-        self.config = config
+        self.config: Config = config
         self.buffer = buffer
         self.export = export
         self.export_loc = export_loc
+        self.num_classes: int = config.model.n_out
         self.store_params: dict[str, StoreParams] = {params.name: params for params in store_params}
         self.stores: dict[str, Store] = {params.name: self._init_store(params) for params in store_params}
         
@@ -233,43 +234,8 @@ class MetricTracker:
             return
 
         try:
-            mae = mean_absolute_error(torch.nn.functional.one_hot(y_true), probs)
-            self.log_metric(f'{prefix}_MAE', mae, preds.shape[0])
-        except Exception as e:
-            logger.error(e)
-
-        try:
             entropy = norm_entropy_loss(probs)
             self.log_metric(f'{prefix}_entropy', entropy.item(), preds.shape[0])
-        except Exception as e:
-            logger.error(e)
-
-
-        try:
-            balanced_accuracy = balanced_accuracy_score(y_true, preds)
-            self.log_metric(f'{prefix}_balanced_accuracy', balanced_accuracy, preds.shape[0]) # pyright: ignore[reportArgumentType]
-        except Exception as e:
-            logger.error(e)
-
-        try:
-            precision = precision_score(y_true, preds, average='weighted')
-            self.log_metric(f'{prefix}_balanced_precision', precision, preds.shape[0]) # pyright: ignore[reportArgumentType]
-        except Exception as e:
-            logger.error(e)
-
-        try:
-            recall = recall_score(y_true, preds, average='weighted')
-            self.log_metric(f'{prefix}_balanced_recall', recall, preds.shape[0]) # pyright: ignore[reportArgumentType]
-        except Exception as e:
-            logger.error(e)
-
-        try:
-            roc_auc = roc_auc_score( # pyright: ignore[reportUnknownVariableType]
-                y_true.long().numpy(), 
-                probs.numpy(), 
-                multi_class='ovo', 
-                average='weighted')
-            self.log_metric(f'{prefix}_roc_auc', roc_auc, probs.shape[0]) # pyright: ignore[reportArgumentType]
         except Exception as e:
             logger.error(e)
 
