@@ -1,17 +1,20 @@
-from ._registry import dataset_registry
+from logging import getLogger
+from pathlib import Path
 from typing import override
-import torch.nn as nn
+
 import torch
+import torch.nn as nn
 from torch import Tensor
 from torch.utils.data import Dataset
 
-from config import Config, config
-from src.utils.logging import setup_logger
+from utils.logging import setup_logger
+
+from ._registry import dataset_registry
 from .polars_dataset import PolarsDataset
-from pathlib import Path
-from logging import getLogger
-logger = getLogger(Path(__file__).stem)
-_ = setup_logger(logger, config.logging)
+
+logger = getLogger(__name__)
+_ = setup_logger(logger)
+
 
 @dataset_registry
 class BinaryCategoricalDataset(PolarsDataset):

@@ -1,3 +1,3 @@
-from src.utils import Registry
+from utils import Registry
 
 dataset_registry = Registry()

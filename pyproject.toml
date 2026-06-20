@@ -2,6 +2,12 @@
 requires = ["setuptools >= 77.0.3"]
 build-backend = "setuptools.build_meta"
 
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[project.scripts]
+citef = "main:app"
+
 [project]
 name = 'citation-forecast'
 description = 'Forecast academic impact (citation count/percentile) with NLP'
@@ -9,9 +15,9 @@ description = 'Forecast academic impact (citation count/percentile) with NLP'
 version = '0.6.0'
 requires-python = '>=3.13'
 
-readme = 'README.md'
-license = 'MIT'
-license-files = ['LICENSE']
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
 
 dependencies = [
     'polars==1.38.1',
