@@ -272,7 +272,6 @@ def main(
             logger.warning("No field id filter set")
 
         if languages:
-            print(languages)
             l1 = measure_lf(lf)
             lf = lf.filter(pl.col("language").is_in(languages))
             l2 = measure_lf(lf)

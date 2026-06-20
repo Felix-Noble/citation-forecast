@@ -24,7 +24,6 @@ class BinaryCrossEntropyLoss(BCELoss, LossFn[BCEBatch, BCEOutput]):
 
     @override
     def __call__(self, output: BCEOutput, batch: BCEBatch) -> Tensor:
-        print(batch)
         return self.torch_bce_loss(
             input=output.probs.squeeze(-1),
             target=batch.y.squeeze(-1),

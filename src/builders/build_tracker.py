@@ -17,7 +17,7 @@ def build_eval_tracker(
         build_tracker_params(name="test_y", device=torch.device("cpu")),
         build_tracker_params(name="test_loss", device=device),
     )
-    metric_tracker = MetricTracker(
+    metric_tracker = BinaryClassificationTracker(
         param_tuple,
         dtype=dtype,
         config=config,
@@ -45,7 +45,7 @@ def build_train_tracker(
         build_tracker_params(name="test_y", device=torch.device("cpu")),
         build_tracker_params(name="test_loss", device=device),
     )
-    metric_tracker = MetricTracker(
+    metric_tracker = BinaryClassificationTracker(
         param_tuple,
         dtype=dtype,
         config=config,

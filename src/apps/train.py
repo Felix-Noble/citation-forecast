@@ -359,6 +359,7 @@ def main(
                     stream_sync=stream_sync,
                     metric_tracker=metric_tracker,
                     device=device,
+                    config=config,
                 )
                 _ = metric_tracker.calc_metrics(
                     prefix="test",

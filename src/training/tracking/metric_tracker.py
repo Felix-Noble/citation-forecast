@@ -79,9 +79,7 @@ class MetricTracker:
         export_loc: Path | None = None,
         buffer: bool = False,
     ):
-        assert not export or export_loc is not None, (
-            "Provide a location to export metrics to"
-        )
+        assert export or export_loc is None, "Provide a location to export metrics to"
 
         self.dtype: torch.dtype = dtype
         self.device: torch.device = device
@@ -207,6 +205,9 @@ class MetricTracker:
         if len(store.store) > 0:
             all_values: torch.Tensor = torch.concatenate(store.store)
             if self.export and self.export_loc is not None:
+                logger.debug(
+                    f"Exporting {store.name} store to {self.export_loc.resolve()}"
+                )
                 os.makedirs(self.export_loc, exist_ok=True)
                 np.save(self.export_loc / store.name, all_values.numpy())
             _ = self._reset_store(store)
