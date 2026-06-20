@@ -12,6 +12,7 @@ setup.py
 *.obj
 
 # Other
+mlartifacts/
 cmd.sh
 models/
 notes.md
