@@ -39,7 +39,7 @@ class PolarsDatasetConfig(BaseModel):
     t_end: date | None
     return_id: bool
     id_col: str
-    dry_run: bool
+    subsample: int | None
 
 
 class Env(Protocol):
@@ -86,8 +86,8 @@ class PolarsDataset(Dataset[PolarsDatasetOutput]):
         self.truncate_method = config.truncate_method
         self.name = config.name
         self.hot_path: Path = Path("./.temp") / "hot" / self.name
-        self.dry_run = config.dry_run
-        if self.dry_run:
+        self.subsample = config.subsample
+        if self.subsample is not None:
             self.hot_path = Path("./.temp") / "hot" / f"{self.name}-DRY"
 
         if isinstance(config.x, str):
@@ -123,9 +123,6 @@ class PolarsDataset(Dataset[PolarsDatasetOutput]):
             if self.t_end is not None and config.time_col:
                 lf = lf.filter(pl.col(self.time_col) < self.t_end)
 
-            if self.dry_run:
-                lf = lf.slice(0, (self.dry_run))
-
             lf = lf.drop_nulls(columns)
 
             if self.truncate and self.truncate_method == "drop":
@@ -137,6 +134,9 @@ class PolarsDataset(Dataset[PolarsDatasetOutput]):
                     )
                 lf = lf.filter(pl.col("total_len") <= self.max_len)
                 lf = lf.drop("total_len")
+
+            if self.subsample is not None:
+                lf = lf.slice(0, (self.subsample))
 
             if self.time_col:
                 lf = lf.drop([self.time_col])

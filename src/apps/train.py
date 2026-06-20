@@ -86,11 +86,9 @@ def main(
         "--start-epoch",
         help="Epoch to load checkpoint from",
     ),
-    dry_run: int = typer.Option(
-        0,
-        "--dry-run",
-        "--dry",
-        help="Run through minimal samples for testing",
+    subsample: int | None = typer.Option(
+        None,
+        help="Sub sample of dataset for testing",
     ),
     progress: bool = typer.Option(
         True,
@@ -133,11 +131,11 @@ def main(
     model_name = config.model.clss.__name__
     if run_suffix:
         run_name: str = model_name + "-" + str(run_suffix)
-    if dry_run:
+    if subsample:
         run_name += "-DRY"
 
     logger.info(
-        f'Run: "{run_name}" (Model: {model_name}) | Device: {device}{" | DRY-RUN" if dry_run else ""}'
+        f'Run: "{run_name}" (Model: {model_name}) | Device: {device}{" | DRY-RUN" if subsample else ""}'
     )
     if compile:
         model.compile(fullgraph=fullgraph, mode=compile)  # type: ignore
@@ -287,7 +285,6 @@ def main(
             )
 
             for batch_i, batch in enumerate(train_dataloader):
-                print(batch)
                 loss = trainer.step(batch)
 
                 # metric_tracker.process_values((batch.y.clone(),), ('train_y',))
