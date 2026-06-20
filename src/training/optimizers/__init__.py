@@ -1,13 +1,9 @@
-from src.utils import import_all_local
 from pathlib import Path
 
-import_all_local(
-        pkg_path=Path(__file__).parent,
-        package='src.training.optimizers'
-                 )
+from utils import import_all_local
 
-__all__ = [
-        'optim_registry'
-        ]
+import_all_local(pkg_path=Path(__file__).parent, package="training.optimizers")
 
-from ._registry import optim_registry #noqa E402
+__all__ = ["optim_registry"]
+
+from ._registry import optim_registry  # noqa E402
