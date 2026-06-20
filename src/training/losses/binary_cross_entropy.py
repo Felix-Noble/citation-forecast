@@ -1,20 +1,31 @@
-from typing import override
+from typing import Protocol, override
+
 import torch
 from torch import Tensor
 from torch.nn import BCELoss
-from ._registry import loss_registry
 
-@loss_registry('BinaryCrossEntropyLoss')
-class BinaryCrossEntropyLoss(BCELoss):
-    def __init__(self):
+from ._registry import loss_registry
+from .loss_protocol import LossFn
+
+
+class BCEBatch(Protocol):
+    y: Tensor
+
+
+class BCEOutput(Protocol):
+    probs: Tensor
+
+
+@loss_registry("BinaryCrossEntropyLoss")
+class BinaryCrossEntropyLoss(BCELoss, LossFn[BCEBatch, BCEOutput]):
+    def __init__(self, config):
         super().__init__()
         self.torch_bce_loss = BCELoss()
 
     @override
-    def __call__(
-            self, 
-            probs: Tensor,
-            target: Tensor,
-            **kwargs
-            ) -> Tensor:
-        return self.torch_bce_loss(input=probs.squeeze(-1), target=target.squeeze(-1))
+    def __call__(self, output: BCEOutput, batch: BCEBatch) -> Tensor:
+        print(batch)
+        return self.torch_bce_loss(
+            input=output.probs.squeeze(-1),
+            target=batch.y.squeeze(-1),
+        )
