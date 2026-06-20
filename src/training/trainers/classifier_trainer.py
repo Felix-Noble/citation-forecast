@@ -15,6 +15,7 @@ class ClassifierTrainer(BaseTrainer, TrainerProtocol[TrainerConfig, Batch]):
         return out
 
     def _step(self, batch: Batch) -> float:
+        self.tracker.process_values((batch.y.clone(),), ("train_y",))
         batch = self.move_to_device(batch)
         out = self.model.forward(batch)
         loss = self.loss_fn(out, batch)
@@ -30,5 +31,10 @@ class ClassifierTrainer(BaseTrainer, TrainerProtocol[TrainerConfig, Batch]):
 
         # self.tracker.process_output(out, step=self.epoch_i)
         loss_cpu = loss_cpu.item()
+        self.tracker.log_metric("train_loss", loss_cpu, batch.x.shape[0])
+        self.tracker.process_values(
+            (out.logits.detach().clone(), out.probs.detach().clone()),
+            ("train_logits", "train_probs"),
+        )
 
         return loss_cpu
