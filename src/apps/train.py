@@ -276,12 +276,12 @@ def main(
             example_progress.reset(
                 examples_done,
                 description="Train examps",
-                total=len(train_dataloader) * config.train.batch_size,
+                total=train_examples_per_epoch,
             )
             eval_example_progress.reset(
                 examples_done,
                 description="Eval examps",
-                total=len(test_dataloader) * config.train.batch_size,
+                total=test_examples_per_epoch,
             )
 
             for batch_i, batch in enumerate(train_dataloader):
@@ -333,7 +333,7 @@ def main(
                 #
                 #                del loss, metrics, probs
                 #
-                example_progress.update(examples_done, advance=config.train.batch_size)
+                example_progress.update(examples_done, advance=config.data.train.loader.batch_size)
 
             if epoch % config.train.checkpoint_interval == 0:
                 save_dir = os.path.join(
