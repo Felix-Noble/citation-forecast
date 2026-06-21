@@ -11,6 +11,7 @@ from training.losses.entropy import norm_entropy_loss
 
 class input_tuple(NamedTuple):
     x: Tensor
+    y: Tensor
     mask: Tensor
 
 
@@ -36,12 +37,15 @@ def eval_model[T_Batch](
             id = batch.id
             metric_tracker.process_values((y, id), ("test_y", "test_ids"))
             with stream_context:
-                x = batch.x.to(device, non_blocking=True)
-                y = y.to(device, non_blocking=True)
-                mask = batch.mask.to(device, non_blocking=True)
+                batch = input_tuple(
+                        x = batch.x.to(device, non_blocking=True),
+                        y = batch.y.to(device, non_blocking=True),
+                        mask = batch.mask.to(device, non_blocking=True),
+                        # weight = batch.weight.to(device, non_blocking=True),
+                        )
             stream_sync()
 
-            out = model(input_tuple(x=x, mask=mask))
+            out = model(batch)
             loss = loss_fn(output=out, batch=batch)
 
             loss_cpu = loss.detach().cpu().item()
@@ -51,4 +55,4 @@ def eval_model[T_Batch](
             metric_tracker.process_values(
                 (out.logits.detach(), out.probs.detach()), ("test_logits", "test_probs")
             )
-            example_progress.update(examples_done, advance=config.train.batch_size)
+            example_progress.update(examples_done, advance=config.data.test.loader.batch_size)
