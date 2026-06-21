@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+import mlflow
 from contextlib import nullcontext
 from typing import NamedTuple, Protocol
 
@@ -118,8 +119,19 @@ class BaseTrainer(ABC):
 
     def step(self, batch: Batch) -> float:
         loss = self._step(batch)
-        # self.tracker.process_loss(loss)
+
+        mlflow.log_metric(
+                "train_loss-batch",
+                loss,
+                synchronous=False,
+                step=int(
+                    ((self.epoch_i - 1) * self.examples_per_epoch)
+                    + self.batch_steps_i 
+                    ),
+                )
+
         self.batch_i += 1
         self.batch_steps_i += batch.x.shape[0]
         self.total_steps_i += batch.x.shape[0]
+
         return loss
