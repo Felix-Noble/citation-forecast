@@ -74,9 +74,10 @@ class BinaryClassificationTracker(MetricTracker):
         step: int,
     ) -> None:
 
-        y_true = y_true.squeeze(-1)
-        probs = probs.squeeze(-1)
         try:
+            y_true = y_true.squeeze(-1)
+            probs = probs.squeeze(-1)
+
             roc_plot = RocCurveDisplay.from_predictions(y_true, probs)
             mlflow.log_figure(
                 roc_plot.figure_,
