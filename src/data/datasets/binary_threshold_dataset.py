@@ -31,4 +31,4 @@ class BinaryThresholdDataset(PolarsDataset):
 
     @override
     def _format_y(self, y: Tensor) -> Tensor:
-        return torch.tensor(y <= self.theta, dtype=torch.float32)
+        return torch.tensor(y > self.theta, dtype=torch.float32)
