@@ -1,35 +1,11 @@
-import copy
-import logging
-import os
-import sys
-from contextlib import nullcontext
 from datetime import datetime
 from logging import getLogger
-from pathlib import Path
 from typing import NamedTuple
 
 import polars as pl
 import typer
-
-from builders import (
-    build_dataloader,
-    build_datasets,
-    build_epoch_progress,
-    build_eval_example_progress,
-    build_eval_tracker,
-    build_loss,
-    build_model,
-)
-from data.datasets import BinaryCategoricalDataset, OrdinalDataset
-from eval import eval_model
-from training.tracking import (
-    BinaryClassificationTracker,
-    MetricTracker,
-    log_lrs,
-    log_params,
-)
 from utils.logging import setup_logger
-
+from config import env
 
 class DateTimeVals(NamedTuple):
     year: int
