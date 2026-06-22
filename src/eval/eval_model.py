@@ -13,6 +13,7 @@ class input_tuple(NamedTuple):
     x: Tensor
     y: Tensor
     mask: Tensor
+    weight: Tensor
 
 
 def eval_model[T_Batch](
@@ -41,7 +42,7 @@ def eval_model[T_Batch](
                         x = batch.x.to(device, non_blocking=True),
                         y = batch.y.to(device, non_blocking=True),
                         mask = batch.mask.to(device, non_blocking=True),
-                        # weight = batch.weight.to(device, non_blocking=True),
+                        weight = batch.weight.to(device, non_blocking=True), 
                         )
             stream_sync()
 
@@ -51,8 +52,9 @@ def eval_model[T_Batch](
             loss_cpu = loss.detach().cpu().item()
 
             metric_tracker.log_metric("test_loss", loss_cpu, x.shape[0])
+            metric_tracker.log_metric("test_sigma", torch.mean(out.sigma.detach()).item(), x.shape[0])
 
-            metric_tracker.process_values(
-                (out.logits.detach(), out.probs.detach()), ("test_logits", "test_probs")
-            )
+#            metric_tracker.process_values(
+#                (out.logits.detach(), out.probs.detach()), ("test_logits", "test_probs")
+#            )
             example_progress.update(examples_done, advance=config.data.test.loader.batch_size)
