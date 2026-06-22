@@ -87,7 +87,6 @@ class MetricTracker:
         self.buffer = buffer
         self.export = export
         self.export_loc = export_loc
-        self.num_classes: int = config.model.n_out
         self.store_params: dict[str, StoreParams] = {
             params.name: params for params in store_params
         }
@@ -294,10 +293,15 @@ class MetricTracker:
         "Aggregates metrics stored as named tuples"
         aggregate_metrics = {k: float("nan") for k in self.metric_store.keys()}
         for metric in aggregate_metrics.keys():
-            df: pd.DataFrame = pd.DataFrame(self.metric_store[metric])
-            score = (df["score"] * df["weight"]).sum() / (df["weight"].sum())
-            if not math.isnan(score):
-                aggregate_metrics[metric] = round(score, 6)
+            print(metric)
+            try:
+                df: pd.DataFrame = pd.DataFrame(self.metric_store[metric])
+                score = (df["score"] * df["weight"]).sum() / (df["weight"].sum())
+                print(score)
+                if not math.isnan(score):
+                    aggregate_metrics[metric] = round(score, 6)
+            except Exception as e:
+                logger.error(e)
         aggregate_metrics = {
             k: v for k, v in aggregate_metrics.items() if not math.isnan(v)
         }
