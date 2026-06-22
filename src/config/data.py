@@ -11,8 +11,8 @@ _x = ['field_name_tokens', 'subfield_name_tokens', 'source_name_tokens', 'title_
 _y = ["cited_by_count"]
 _theta = 0
 
-_train_start = date(1800, 1,1)
-_train_end = date(1990, 1, 1) 
+_train_start = date(1990, 1,1)
+_train_end = date(2010, 1, 1) 
 _test_start = date(2020, 1, 1)
 _test_end = date(2021, 1, 1)
 
