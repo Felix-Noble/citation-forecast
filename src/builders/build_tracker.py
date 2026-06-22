@@ -3,7 +3,7 @@ import torch
 from training.tracking import BinaryClassificationTracker, MetricTracker
 from training.tracking.metric_tracker import StoreParams
 
-
+_tracker = MetricTracker
 def build_eval_tracker(
     device: torch.device,
     dtype: torch.dtype,
@@ -17,7 +17,7 @@ def build_eval_tracker(
         build_tracker_params(name="test_y", device=torch.device("cpu")),
         build_tracker_params(name="test_loss", device=device),
     )
-    metric_tracker = BinaryClassificationTracker(
+    metric_tracker = _tracker(
         param_tuple,
         dtype=dtype,
         config=config,
@@ -40,12 +40,15 @@ def build_train_tracker(
         build_tracker_params(name="train_y", device=torch.device("cpu")),
         build_tracker_params(name="train_loss", device=device),
         build_tracker_params(name="train_ids", device=device),
+        build_tracker_params(name="train_sigma", device=device),
+
         build_tracker_params(name="test_logits", device=device),
         build_tracker_params(name="test_probs", device=device),
         build_tracker_params(name="test_y", device=torch.device("cpu")),
         build_tracker_params(name="test_loss", device=device),
+        build_tracker_params(name="test_sigma", device=device),
     )
-    metric_tracker = BinaryClassificationTracker(
+    metric_tracker = _tracker(
         param_tuple,
         dtype=dtype,
         config=config,
