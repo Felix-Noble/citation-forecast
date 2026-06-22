@@ -39,11 +39,11 @@ def eval_model[T_Batch](
             metric_tracker.process_values((y, id), ("test_y", "test_ids"))
             with stream_context:
                 batch = input_tuple(
-                        x = batch.x.to(device, non_blocking=True),
-                        y = batch.y.to(device, non_blocking=True),
-                        mask = batch.mask.to(device, non_blocking=True),
-                        weight = batch.weight.to(device, non_blocking=True), 
-                        )
+                    x=batch.x.to(device, non_blocking=True),
+                    y=batch.y.to(device, non_blocking=True),
+                    mask=batch.mask.to(device, non_blocking=True),
+                    weight=batch.weight.to(device, non_blocking=True),
+                )
             stream_sync()
 
             out = model(batch)
@@ -52,9 +52,13 @@ def eval_model[T_Batch](
             loss_cpu = loss.detach().cpu().item()
 
             metric_tracker.log_metric("test_loss", loss_cpu, x.shape[0])
-            metric_tracker.log_metric("test_sigma", torch.mean(out.sigma.detach()).item(), x.shape[0])
+            #            metric_tracker.log_metric(
+            #                "test_sigma", torch.mean(out.sigma.detach()).item(), x.shape[0]
+            #            )
 
-#            metric_tracker.process_values(
-#                (out.logits.detach(), out.probs.detach()), ("test_logits", "test_probs")
-#            )
-            example_progress.update(examples_done, advance=config.data.test.loader.batch_size)
+            metric_tracker.process_values(
+                (out.logits.detach(), out.probs.detach()), ("test_logits", "test_probs")
+            )
+            example_progress.update(
+                examples_done, advance=config.data.test.loader.batch_size
+            )

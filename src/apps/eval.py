@@ -18,11 +18,11 @@ from builders import (
     build_eval_tracker,
     build_loss,
 )
+from config import env
 from data import PortionSampler
+from data.dataloaders import DataLoader
 from eval import eval_model
 from training.tracking import (
-    BinaryClassificationTracker,
-    MetricTracker,
     log_lrs,
     log_params,
 )
@@ -111,19 +111,12 @@ def main(
     assert epoch, "Provide an epoch to load checkpoint from"
     assert start_date is not None, "Provide a start date"
     assert interval is not None, "Provide an interval"
-    assert dataset, "Privide a dataset formatting class"
 
     # Initialise environment
     assert start_date or not interval, "Specify an interval with start_date"
     assert interval or not end_date, "Specify an end_date with interval"
 
     EXPERIMENT: str = experiment if experiment else env.EXPERIMENT + "-EVAL"
-    dataset_path: str = dataset_path if dataset_path else config.train.test_dataset
-    dataset_kwargs: dict = (
-        ast.literal_eval(dataset_kwargs)
-        if dataset_kwargs
-        else ast.literal_eval(config.train.dataset_kwargs)
-    )
     TEMP_DIR: Path = temp_dir / run_id
     CHECKPOINT_DIR = TEMP_DIR / "checkpoints"
     PREDICTIONS_DIR = TEMP_DIR / "predictions"
@@ -173,8 +166,8 @@ def main(
 
     # Fetch model artifacts, TODO: add model arch file as artifact
     os.makedirs(CHECKPOINT_DIR, exist_ok=True)
-    if os.path.exists(CHECKPOINT_DIR / "eval_config.py"):
-        logger.info(f"Loading Config file from {TEMP_DIR}")
+    if os.path.exists(CHECKPOINT_DIR / "eval_config.py") or True:
+        logger.info(f"Loading Config file from {CHECKPOINT_DIR}")
     else:
         logger.info("Fetching config file")
         client.download_artifacts(
@@ -186,17 +179,30 @@ def main(
             str(CHECKPOINT_DIR / "config.py"), str(CHECKPOINT_DIR / "eval_config.py")
         )
     if os.path.exists(CHECKPOINT_DIR / f"epoch-{epoch}.pt"):
-        logger.info(f"Loading weights file (Epoch: {epoch}) from {TEMP_DIR}")
+        logger.info(
+            f"Loading weights file (Epoch: {epoch}) from {CHECKPOINT_DIR}",
+        )
     else:
         logger.info(f"Fetching weights file for (Epoch: {epoch})")
-        client.download_artifacts(run_id, str(f"epoch-{epoch}.pt"), str(TEMP_DIR))
+        client.download_artifacts(
+            run_id,
+            str(f"epoch-{epoch}.pt"),
+            str(
+                CHECKPOINT_DIR,
+            ),
+        )
 
     # Load model specific config
     sys.path.append(os.path.abspath(str(CHECKPOINT_DIR)))
-    from eval_config import Config as EvalConfig
+    # from eval_config import Config as EvalConfig
 
-    eval_config = EvalConfig()
-    model = build_model(device=device, config=eval_config)
+    # eval_config = EvalConfig()
+    eval_config = config
+    model = config.model.clss(
+        config=config.model.model,
+        device=device,
+        dtype=config.model.dtype,
+    )
     model.compile(mode="max-autotune")
 
     model.load_state_dict(
@@ -213,7 +219,7 @@ def main(
         dtype=torch.float32,
     )
     loss_fn = build_loss(config=eval_config)
-    logger.info(f"Model {eval_config.model.model_name} loaded to {device}")
+    logger.info(f"Model {model.__module__} loaded to {device}")
     logger.info(f"Starting temporal iteration: from ... to... interval...")
 
     current_t_start: datetime = start_date
@@ -229,49 +235,33 @@ def main(
                 current_t_end = end_date
 
             logger.debug(f"Windwo from - {current_t_start} to - {current_t_end}")
-            window_config = copy.deepcopy(config)
-            window_config_args = config.train.__dict__
-            window_config_args["test_start"] = current_t_start
-            window_config_args["test_end"] = current_t_end
-            window_config_args["batch_size"] = config.train.batch_size
-            window_config.train = TrainConfig(**window_config_args)
+            window_config = copy.deepcopy(config.data.test.dataset)
+            window_config.t_start = current_t_start
+            window_config.t_end = current_t_start
 
             metric_tracker.export = True
             metric_tracker.export_loc = (
-                PREDICTIONS_DIR / f"{window_config.train.test_start.year}"
+                PREDICTIONS_DIR / f"{window_config.t_start.year}"
             )
 
-            test_dataset = build_dataset(
-                data_path=str(env.STAGED_LOC / dataset_path),
-                dataset=dataset,
-                X=x_columns,
-                y=y_columns,
-                t_start=config.train.test_start,
-                t_end=config.train.test_end,
-                max_len=config.model.max_len_eval,
-                id_col="id",
-                return_id=True,
-                config=eval_config,
-                return_mask=True,
-                pad=True,
-                dry_run=dry_run,
-                name="eval-dataset",
-                auto_remove=True,
-                **dataset_kwargs,
+            test_dataset = config.data.test.clss(
+                config=window_config,
+                env=config.env,
             )
 
-            sampler = None
-            if config.train.sample:
-                sampler = PortionSampler(test_dataset, config.train.sample)
-
-            test_dataloader = build_dataloader(
-                dataset=test_dataset, config=window_config, sampler=sampler
+            test_dataloader = DataLoader(
+                dataset=test_dataset,
+                config=config.data.test.loader,
             )
 
             example_progress_bar.start()
             example_progress = example_progress_bar.add_task(
-                "Examples", total=len(test_dataloader) * window_config.train.batch_size
+                "Examples",
+                total=len(test_dataset)
+                if config.data.test.loader.samplers is None
+                else config.data.test.loader.samples,
             )
+
             eval_model(
                 model=model,
                 loss_fn=loss_fn,

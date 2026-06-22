@@ -333,7 +333,9 @@ def main(
                 #
                 #                del loss, metrics, probs
                 #
-                example_progress.update(examples_done, advance=config.data.train.loader.batch_size)
+                example_progress.update(
+                    examples_done, advance=config.data.train.loader.batch_size
+                )
 
             if epoch % config.train.checkpoint_interval == 0:
                 save_dir = os.path.join(
