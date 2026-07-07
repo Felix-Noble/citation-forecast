@@ -1,21 +1,27 @@
 import torch
 
-from training.tracking import BinaryClassificationTracker, MetricTracker
+import training.tracking as tracking
 from training.tracking.metric_tracker import StoreParams
 
-_tracker = MetricTracker
+_tracker = tracking.BinaryClassificationTracker
+
+
 def build_eval_tracker(
     device: torch.device,
     dtype: torch.dtype,
     config,
     **kwargs,
-) -> MetricTracker:
+) -> tracking.MetricTracker:
     param_tuple = (
-        build_tracker_params(name="test_ids", device=device),
-        build_tracker_params(name="test_logits", device=device),
-        build_tracker_params(name="test_probs", device=device),
-        build_tracker_params(name="test_y", device=torch.device("cpu")),
-        build_tracker_params(name="test_loss", device=device),
+        build_tracker_params(name="val_ids", device=device),
+        build_tracker_params(name="val_logits", device=device),
+        build_tracker_params(name="val_probs", device=device),
+        build_tracker_params(name="val_y", device=torch.device("cpu")),
+        build_tracker_params(name="val_y_orig", device=torch.device("cpu")),
+        build_tracker_params(name="val_loss", device=device),
+        build_tracker_params(name="val_sigma", device=device),
+        build_tracker_params(name="val_preds", device=device),
+        build_tracker_params(name="val_sigma", device=device),
     )
     metric_tracker = _tracker(
         param_tuple,
@@ -32,21 +38,25 @@ def build_train_tracker(
     dtype: torch.dtype,
     config,
     **kwargs,
-) -> MetricTracker:
+) -> tracking.MetricTracker:
     param_tuple = (
-        build_tracker_params(name="test_ids", device=device),
         build_tracker_params(name="train_logits", device=device),
         build_tracker_params(name="train_probs", device=device),
         build_tracker_params(name="train_y", device=torch.device("cpu")),
+        build_tracker_params(name="train_y_orig", device=torch.device("cpu")),
         build_tracker_params(name="train_loss", device=device),
         build_tracker_params(name="train_ids", device=device),
+        build_tracker_params(name="train_preds", device=device),
         build_tracker_params(name="train_sigma", device=device),
-
-        build_tracker_params(name="test_logits", device=device),
-        build_tracker_params(name="test_probs", device=device),
-        build_tracker_params(name="test_y", device=torch.device("cpu")),
-        build_tracker_params(name="test_loss", device=device),
-        build_tracker_params(name="test_sigma", device=device),
+        build_tracker_params(name="val_ids", device=device),
+        build_tracker_params(name="val_logits", device=device),
+        build_tracker_params(name="val_probs", device=device),
+        build_tracker_params(name="val_y", device=torch.device("cpu")),
+        build_tracker_params(name="val_y_orig", device=torch.device("cpu")),
+        build_tracker_params(name="val_loss", device=device),
+        build_tracker_params(name="val_sigma", device=device),
+        build_tracker_params(name="val_preds", device=device),
+        build_tracker_params(name="val_sigma", device=device),
     )
     metric_tracker = _tracker(
         param_tuple,
