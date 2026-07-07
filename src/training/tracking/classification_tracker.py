@@ -8,12 +8,12 @@ import mlflow
 import numpy as np
 import seaborn as sns
 import torch
+import torch.nn.functional as F
 from sklearn.metrics import (  # pyright: ignore[reportUnknownVariableType, reportMissingTypeStubs]
     PrecisionRecallDisplay,
     RocCurveDisplay,
     average_precision_score,
     balanced_accuracy_score,
-    f1_score,
     mean_absolute_error,
     precision_score,
     recall_score,
@@ -54,7 +54,7 @@ class MetricTuple(NamedTuple):
     weight: float
 
 
-class BinaryClassificationTracker(MetricTracker):
+class ClassificationTracker(MetricTracker):
     """
     Classification Metrics Tracker:
 
@@ -73,27 +73,15 @@ class BinaryClassificationTracker(MetricTracker):
         prefix: str,
         y_true: np.ndarray,
         probs: np.ndarray,
-        preds: np.ndarray,
         step: int,
     ) -> None:
-        try:
-            fig1 = histplot(f"{prefix}-targets", y_true)
-            mlflow.log_figure(
-                fig1,
-                f"{prefix}-plots/targets/targets-step-{step}.png",
-                save_kwargs={"dpi": 72},
-            )
-        except Exception as e:
-            logger.error(e)
-        try:
-            fig4 = histplot(f"{prefix}-predictions", preds)
-            mlflow.log_figure(
-                fig4,
-                f"{prefix}-plots/preds/preds-step-{step}.png",
-                save_kwargs={"dpi": 72},
-            )
-        except Exception as e:
-            logger.error(e)
+
+        fig1 = histplot(f"{prefix}-targets", y_true)
+        mlflow.log_figure(
+            fig1,
+            f"{prefix}-plots/targets/targets-step-{step}.png",
+            save_kwargs={"dpi": 72},
+        )
         try:
             roc_plot = RocCurveDisplay.from_predictions(y_true, probs)
             mlflow.log_figure(
@@ -104,21 +92,7 @@ class BinaryClassificationTracker(MetricTracker):
         except Exception as e:
             logger.error(e)
 
-        try:
-            pr_plot = PrecisionRecallDisplay.from_predictions(
-                y_true,
-                probs,
-                plot_chance_level=True,
-            )
-            mlflow.log_figure(
-                pr_plot.figure_,
-                f"{prefix}-plots/PR/pr_curve-step-{step}.png",
-                save_kwargs={"dpi": 72},
-            )
-        except Exception as e:
-            logger.error(e)
-
-        # OutPut Probs histogram
+            # OutPut Probs histogram
         try:
             # 1. Calculate Proportions for the Legend
             total = len(y_true)
@@ -185,6 +159,7 @@ class BinaryClassificationTracker(MetricTracker):
         probs = self._gather_store(store_name=f"{prefix}_probs")
         y_true = self._gather_store(store_name=f"{prefix}_y")
         _ = self._gather_store(store_name=f"{prefix}_ids")
+        self._log_plots(prefix, y_true.long().numpy(), probs.numpy(), step)
         if logits.size(0) != y_true.size(0):
             logger.error(
                 f"Different n. examples in logits and y_true: logits shape: {logits.shape}, y_true shape:{y_true.shape}"
@@ -193,13 +168,14 @@ class BinaryClassificationTracker(MetricTracker):
 
         n_examples = probs.shape[0]
         try:
-            mae = mean_absolute_error(y_true, probs)
+            y_true_one_hot = F.one_hot(y_true, num_classes=probs.shape[-1]).squeeze(1)
+            mae = mean_absolute_error(y_true_one_hot, probs.squeeze(-1))
             self.log_metric(f"{prefix}_MAE", mae, n_examples)
         except Exception as e:
             logger.error(e)
         try:
             roc_auc = roc_auc_score(  # pyright: ignore[reportUnknownVariableType]
-                y_true.long().numpy(),
+                y_true.squeeze(1).long().numpy(),
                 probs.numpy(),
                 multi_class="ovo",
                 average="weighted",
@@ -208,84 +184,38 @@ class BinaryClassificationTracker(MetricTracker):
         except Exception as e:
             logger.error(e)
 
-        try:
-            pr_auc = average_precision_score(y_true.long().numpy(), probs.numpy())
-            self.log_metric(f"{prefix}_PR_AUC", pr_auc, n_examples)  # pyright: ignore[reportArgumentType]
-        except Exception as e:
-            try:
-                mssg = f"{e}\nrecall:{recall}\nprecision:{precision}"
-            except:
-                mssg = str(e)
-            logger.error(mssg)
-
-        # binary case
-        preds = torch.zeros_like(probs)
-        preds[probs > 0.5] = 1
-
-        self._log_plots(
-            prefix=prefix,
-            y_true=y_true.long().squeeze(-1).numpy(),
-            probs=probs.squeeze(-1).numpy(),
-            preds=preds.squeeze(-1).numpy(),
-            step=step,
-        )
+        if self.config.model.model.n_out == 1:
+            # binary case
+            preds = torch.zeros_like(probs)
+            preds[probs > 0.5] = 1
+        else:
+            preds = torch.argmax(
+                probs,
+                dim=1,
+            ).squeeze(-1)
 
         try:
             balanced_accuracy = balanced_accuracy_score(y_true, preds)
             self.log_metric(
-                f"{prefix}_balanced_accuracy:50", balanced_accuracy, n_examples
+                f"{prefix}_balanced_accuracy", balanced_accuracy, n_examples
             )  # pyright: ignore[reportArgumentType]
         except Exception as e:
             logger.error(e)
-
         try:
-            f1 = f1_score(y_true, preds)
-            self.log_metric(f"{prefix}_F1:50", f1, n_examples)  # pyright: ignore[reportArgumentType]
-        except Exception as e:
-            logger.error(e)
-
-        try:
-            recall = recall_score(y_true.long().numpy(), preds.numpy())
-            self.log_metric(f"{prefix}_recall:50", recall, n_examples)
+            recall = recall_score(
+                y_true.long().numpy(),
+                preds.numpy(),
+                average="weighted",
+            )
+            self.log_metric(f"{prefix}_recall", recall, n_examples)
         except Exception as e:
             logger.error(e)
         try:
-            precision = precision_score(y_true.long().numpy(), preds.numpy())
-            self.log_metric(f"{prefix}_precision:50", precision, n_examples)
+            precision = precision_score(
+                y_true.long().numpy(),
+                preds.numpy(),
+                average="weighted",
+            )
+            self.log_metric(f"{prefix}_precision", precision, n_examples)
         except Exception as e:
             logger.error(e)
-
-        thetas = np.linspace(0.25, 0.75, num=20, endpoint=False)
-        accuracy_scores = []
-
-        try:
-            for theta in thetas:
-                preds = torch.zeros_like(probs)
-                preds[probs > theta] = 1
-                preds = preds.numpy()
-
-                balanced_accuracy = balanced_accuracy_score(y_true, preds)
-
-                accuracy_scores.append(balanced_accuracy)
-
-            accuracy_scores = np.array(accuracy_scores)
-            high_accuracy_i = np.argmax(accuracy_scores)
-
-            preds = torch.zeros_like(probs)
-            preds[probs > thetas[high_accuracy_i]] = 1
-            preds = preds.numpy()
-
-            recall = recall_score(y_true, preds)
-            precision = precision_score(y_true, preds)
-
-            self.log_metric(
-                f"{prefix}_best_accuracy", accuracy_scores[high_accuracy_i], n_examples
-            )  # pyright: ignore[reportArgumentType]
-            self.log_metric(
-                f"{prefix}_best_accuracy_theta", thetas[high_accuracy_i], n_examples
-            )  # pyright: ignore[reportArgumentType]
-            self.log_metric(f"{prefix}_precision:best_acc", precision, n_examples)  # pyright: ignore[reportArgumentType]
-            self.log_metric(f"{prefix}_recall:best_acc", recall, n_examples)  # pyright: ignore[reportArgumentType]
-
-        except Exception as e:
-            logger.error(f"theta: {theta} | error: {e}")

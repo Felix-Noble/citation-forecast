@@ -24,8 +24,6 @@ from sklearn.metrics import (  # pyright: ignore[reportUnknownVariableType, repo
 from utils.logging import setup_logger
 
 from ..losses.entropy import norm_entropy_loss
-from ..losses.wasserstein import wasserstein_loss
-from ..losses.wasserstein_entropy import WassersteinEntropyLoss
 
 logger = getLogger(__name__)
 _ = setup_logger(logger)
@@ -293,11 +291,9 @@ class MetricTracker:
         "Aggregates metrics stored as named tuples"
         aggregate_metrics = {k: float("nan") for k in self.metric_store.keys()}
         for metric in aggregate_metrics.keys():
-            print(metric)
             try:
                 df: pd.DataFrame = pd.DataFrame(self.metric_store[metric])
                 score = (df["score"] * df["weight"]).sum() / (df["weight"].sum())
-                print(score)
                 if not math.isnan(score):
                     aggregate_metrics[metric] = round(score, 6)
             except Exception as e:
