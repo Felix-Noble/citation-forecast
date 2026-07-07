@@ -2,6 +2,7 @@ from pydantic import BaseModel, PositiveInt
 from torch.utils.data import DataLoader, Dataset
 
 from data import PortionSampler
+from data.samplers.auto_binned_sampler import AutoBinnedSampler
 
 
 class DataLoaderConfig(BaseModel):
@@ -25,6 +26,9 @@ class DLWrapper[T_Output]:
     ):
         if config.samples is not None:
             sampler = PortionSampler(dataset, config.samples)
+            #            sampler = AutoBinnedSampler(
+            #                dataset, dataset.y[0], num_samples=config.samples
+            #            )
         else:
             sampler = None
 
