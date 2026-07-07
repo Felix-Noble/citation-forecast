@@ -1,8 +1,8 @@
 from abc import ABC, abstractmethod
-import mlflow
 from contextlib import nullcontext
 from typing import NamedTuple, Protocol
 
+import mlflow
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -57,6 +57,7 @@ class BaseTrainer(ABC):
     config = TrainerConfig
 
     def __init__(self, config: TrainerConfig):
+        self.prefix = "train"
         self.model = config.model
         self.optimizer = config.optimizer
         self.loss_fn = config.loss_fn
@@ -118,17 +119,17 @@ class BaseTrainer(ABC):
         pass
 
     def step(self, batch: Batch) -> float:
+        self.model.train()
         loss = self._step(batch)
 
         mlflow.log_metric(
-                "train_loss-batch",
-                loss,
-                synchronous=False,
-                step=int(
-                    ((self.epoch_i - 1) * self.examples_per_epoch)
-                    + self.batch_steps_i 
-                    ),
-                )
+            "train_loss-batch",
+            loss,
+            synchronous=False,
+            step=int(
+                ((self.epoch_i - 1) * self.examples_per_epoch) + self.batch_steps_i
+            ),
+        )
 
         self.batch_i += 1
         self.batch_steps_i += batch.x.shape[0]

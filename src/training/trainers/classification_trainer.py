@@ -1,6 +1,5 @@
 from typing import NamedTuple
 
-import torch
 from torch import Tensor
 
 from .base_trainer import BaseTrainer, TrainerConfig, TrainerProtocol
@@ -10,9 +9,10 @@ class Batch(NamedTuple):
     x: Tensor
     y: Tensor
     mask: Tensor
+    weight: Tensor
 
 
-class RegressTrainer(BaseTrainer, TrainerProtocol[TrainerConfig, Batch]):
+class ClassificationTrainer(BaseTrainer, TrainerProtocol[TrainerConfig, Batch]):
     config: type[TrainerConfig] = TrainerConfig
 
     def move_to_device(self, batch: Batch) -> Batch:
@@ -21,6 +21,7 @@ class RegressTrainer(BaseTrainer, TrainerProtocol[TrainerConfig, Batch]):
                 x=batch.x.to(self.device, non_blocking=True),
                 y=batch.y.to(self.device, non_blocking=True),
                 mask=batch.mask.to(self.device, non_blocking=True),
+                weight=batch.weight.to(self.device, non_blocking=True),
             )
         self.stream_sync()
         return out
@@ -45,12 +46,10 @@ class RegressTrainer(BaseTrainer, TrainerProtocol[TrainerConfig, Batch]):
             pass
         # self.tracker.process_output(out, step=self.epoch_i)
         loss_cpu = loss_cpu.item()
-
-        self.tracker.log_metric(f"{self.prefix}_loss", loss_cpu, batch.x.shape[0])
-
+        self.tracker.log_metric("train_loss", loss_cpu, batch.x.shape[0])
         self.tracker.process_values(
-            (out.prediction.detach().clone(),),
-            (f"{self.prefix}_preds",),
+            (out.logits.detach().clone(), out.probs.detach().clone()),
+            ("train_logits", "train_probs"),
         )
 
         return loss_cpu

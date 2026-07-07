@@ -1,6 +1,5 @@
 from typing import NamedTuple
 
-import torch
 from torch import Tensor
 
 from .base_trainer import BaseTrainer, TrainerConfig, TrainerProtocol
@@ -9,10 +8,13 @@ from .base_trainer import BaseTrainer, TrainerConfig, TrainerProtocol
 class Batch(NamedTuple):
     x: Tensor
     y: Tensor
+    graph_x: Tensor
     mask: Tensor
+    graph_x_mask: Tensor
+    weight: Tensor
 
 
-class RegressTrainer(BaseTrainer, TrainerProtocol[TrainerConfig, Batch]):
+class OrdinalRegressionTrainer(BaseTrainer, TrainerProtocol[TrainerConfig, Batch]):
     config: type[TrainerConfig] = TrainerConfig
 
     def move_to_device(self, batch: Batch) -> Batch:
@@ -20,7 +22,10 @@ class RegressTrainer(BaseTrainer, TrainerProtocol[TrainerConfig, Batch]):
             out = Batch(
                 x=batch.x.to(self.device, non_blocking=True),
                 y=batch.y.to(self.device, non_blocking=True),
+                graph_x=batch.graph_x.to(self.device, non_blocking=True),
                 mask=batch.mask.to(self.device, non_blocking=True),
+                graph_x_mask=batch.graph_x_mask.to(self.device, non_blocking=True),
+                weight=batch.weight.to(self.device, non_blocking=True),
             )
         self.stream_sync()
         return out
@@ -45,12 +50,10 @@ class RegressTrainer(BaseTrainer, TrainerProtocol[TrainerConfig, Batch]):
             pass
         # self.tracker.process_output(out, step=self.epoch_i)
         loss_cpu = loss_cpu.item()
-
-        self.tracker.log_metric(f"{self.prefix}_loss", loss_cpu, batch.x.shape[0])
-
+        self.tracker.log_metric("train_loss", loss_cpu, batch.x.shape[0])
         self.tracker.process_values(
-            (out.prediction.detach().clone(),),
-            (f"{self.prefix}_preds",),
+            (out.logits.detach().clone(), out.probs.detach().clone()),
+            ("train_logits", "train_probs"),
         )
 
         return loss_cpu
