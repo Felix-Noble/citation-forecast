@@ -4,7 +4,7 @@ from torch.distributions.normal import Normal
 
 from ._registry import loss_registry
 from .cross_entropy import CrossEntropyLoss
-from .wasserstein import wasserstein_loss
+from .wasserstein_funcs import wasserstein_loss
 
 
 @loss_registry("WassersteinCrossEntropyLoss")

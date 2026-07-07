@@ -1,21 +1,41 @@
-from ._registry import loss_registry
-from typing import override
-from torch import Tensor
-import torch.nn as nn
+from typing import Protocol, override
 
-@loss_registry('CrossEntropyLoss')
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from torch import Tensor
+
+from ._registry import loss_registry
+
+
+class CEBatch(Protocol):
+    y: Tensor
+    weight: Tensor
+
+
+class CEOutput(Protocol):
+    logits: Tensor
+
+
+@loss_registry("CrossEntropyLoss")
 class CrossEntropyLoss(nn.CrossEntropyLoss):
     def __init__(self, config):
         super().__init__()
-        self.torch_ce_loss: nn.CrossEntropyLoss = nn.CrossEntropyLoss(ignore_index=config.model.pad_token_id)
-        self.n_classes = config.model.n_out
+        self.n_classes = config.model.model.n_out
+        self._CELoss = F.cross_entropy
+        self.ignore_index = config.data.train.dataset.pad_token_id
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        if config.data.train.dataset.weights is not None:
+            self.weights = config.data.train.dataset.weights.to(self.device)
+        else:
+            self.weights = None
 
     @override
-    def __call__(
-            self, 
-            logits: Tensor,
-            target: Tensor,
-            **kwargs
-            ) -> Tensor:
-        loss = self.torch_ce_loss(logits.view(-1, logits.size(-1)), target.view(-1))
+    def __call__(self, output: CEOutput, batch: CEBatch) -> Tensor:
+        loss = self._CELoss(
+            output.logits.view(-1, output.logits.size(-1)),
+            batch.y.view(-1),
+            # weight=self.weights,
+            ignore_index=self.ignore_index,
+        )
         return loss
