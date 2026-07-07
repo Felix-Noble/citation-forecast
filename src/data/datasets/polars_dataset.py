@@ -5,10 +5,12 @@ from logging import getLogger
 from pathlib import Path
 from typing import NamedTuple, Protocol, override
 
+import matplotlib.pyplot as plt
 import polars as pl
+import seaborn as sns
 import torch
 import torch.nn as nn
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from torch import Tensor
 from torch.utils.data import Dataset
 
@@ -22,9 +24,10 @@ class PolarsDatasetConfig(BaseModel):
     loc: str
     x: list[str]
     y: list[str]
-    weights: list[float] | None
+    meta_cols: list[str]
+    filter: pl.Expr | None
+    weights: Tensor | None
     max_len: int
-    n_buckets: int
     shuffle: bool = True
     sample: int | None
     return_mask: bool
@@ -40,6 +43,7 @@ class PolarsDatasetConfig(BaseModel):
     return_id: bool
     id_col: str
     subsample: int | None
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
 
 class Env(Protocol):
@@ -54,7 +58,39 @@ class PolarsDatasetOutput(NamedTuple):
     mask: Tensor
 
 
-class PolarsDataset(Dataset[PolarsDatasetOutput]):
+def plot_target_distribution_polars(lf: pl.LazyFrame, y_true_col: str, log_scale=True):
+    """Plots a histogram of the true target values from a Polars LazyFrame."""
+    # Only evaluate and collect the single target column to save memory
+    y_true = lf.select(y_true_col).collect(engine="streaming").to_numpy()
+
+    sns.set_theme(style="whitegrid")
+    fig = plt.figure(figsize=(9, 5))
+
+    sns.histplot(
+        y_true + 1,
+        kde=True,
+        color="#1f77b4",
+        edgecolor="white",
+        linewidth=1.2,
+        alpha=0.6,
+        bins="auto",
+        log_scale=log_scale,
+    )
+
+    plt.title(
+        f"Distribution of True Target Values ({y_true_col})",
+        fontsize=14,
+        pad=15,
+    )
+    plt.xlabel("True Target Value", fontsize=12, labelpad=10)
+    plt.ylabel("Count / Density", fontsize=12, labelpad=10)
+    sns.despine(left=True, bottom=True)
+
+    plt.tight_layout()
+    return fig
+
+
+class PolarsDataset[T_Config](Dataset[PolarsDatasetOutput]):
     config = PolarsDatasetConfig
 
     def __init__(
@@ -71,6 +107,8 @@ class PolarsDataset(Dataset[PolarsDatasetOutput]):
             "Shuffle and Sample cannot both be used"
         )
         self.data_path = env.STAGED_LOC / config.loc
+        self.meta_cols = config.meta_cols
+        self.filter = config.filter
         self.t_start = config.t_start
         self.t_end = config.t_end
         self.weights = config.weights
@@ -78,7 +116,6 @@ class PolarsDataset(Dataset[PolarsDatasetOutput]):
         self.return_id = config.return_id
         self.id_col = config.id_col
         self.max_len = config.max_len
-        self.n_buckets = config.n_buckets
         self.pad = config.pad
         self.pad_value = config.pad_token_id
         self.return_mask = config.return_mask
@@ -98,7 +135,7 @@ class PolarsDataset(Dataset[PolarsDatasetOutput]):
             self.y: list[str] = [config.y]
         else:
             self.y = config.y
-        columns = list(set(self.x + self.y))
+        columns = list(set(self.x + self.y + self.meta_cols))
 
         if config.time_col:
             columns += [config.time_col]
@@ -135,11 +172,20 @@ class PolarsDataset(Dataset[PolarsDatasetOutput]):
                 lf = lf.filter(pl.col("total_len") <= self.max_len)
                 lf = lf.drop("total_len")
 
-            if self.subsample is not None:
-                lf = lf.slice(0, (self.subsample))
+            if self.filter is not None:
+                lf = lf.filter(self.filter)
 
             if self.time_col:
                 lf = lf.drop([self.time_col])
+            if self.meta_cols:
+                lf = lf.drop(self.meta_cols)
+
+            if self.subsample is not None:
+                logger.info(f"Taking {self.subsample} random subsamples")
+                lf = lf.collect(engine="streaming").sample(n=self.subsample).lazy()
+
+            self.figure_log = plot_target_distribution_polars(lf, self.y[0])
+            self.figure = plot_target_distribution_polars(lf, self.y[0], False)
 
             rows = lf.select(pl.len()).collect(engine="streaming").item()
             logger.info(
