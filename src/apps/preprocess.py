@@ -144,8 +144,11 @@ def main(
                 if i >= n:
                     i = 0
 
-        def measure_lf(lf: pl.LazyFrame) -> int:
-            return lf.select(pl.len()).collect(engine="streaming").item()
+        def measure_lf(lf: pl.LazyFrame, run=False) -> float:
+            if run:
+                return lf.select(pl.len()).collect(engine="streaming").item()
+            else:
+                return float("nan")
 
         def export_parquet(
             lf: pl.LazyFrame,
@@ -154,9 +157,12 @@ def main(
             progress_bar: Progress | None = None,
             progress_task: TaskID | None = None,
             compression_level: int = 1,
+            n_rows: int | float | None = None,
         ) -> None:
 
-            n_rows = measure_lf(lf)
+            if n_rows is None or math.isnan(n_rows):
+                n_rows = measure_lf(lf, True)
+
             rows_per_part = math.ceil(n_rows / n_partitions)
 
             lf = lf.with_row_index("idx").with_columns(
@@ -187,7 +193,7 @@ def main(
         lf: pl.LazyFrame = pl.scan_parquet(
             list(origin.glob("*.par*")), extra_columns="ignore"
         )
-        n_rows: int = measure_lf(lf)
+        n_rows: float = measure_lf(lf)
         alternator = value_alternator()
 
         progress_bar = Progress(
@@ -291,13 +297,14 @@ def main(
             logger.warning("Embed feature is a work in progress, leave out for now")
 
         # Checkpoint
-        n_rows = measure_lf(lf)
+        n_rows = measure_lf(lf, True)
         progress = progress_bar.add_task("Clean/Filter", total=n_rows)
 
         temp_loc = Path(f"./temp{next(alternator)}")
         os.makedirs(temp_loc)
         export_parquet(
             lf=lf,
+            n_rows=n_rows,
             destination=temp_loc,
             n_partitions=n_partitions,
             progress_bar=progress_bar,

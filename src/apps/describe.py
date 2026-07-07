@@ -4,8 +4,11 @@ from typing import NamedTuple
 
 import polars as pl
 import typer
-from utils.logging import setup_logger
+
+import config
 from config import env
+from utils.logging import setup_logger
+
 
 class DateTimeVals(NamedTuple):
     year: int
@@ -40,6 +43,7 @@ def main(
         "-b",
         help="Borders of buckets to describe count by, creates list of inclusive upper limits",
     ),
+    filter: bool = typer.Option(False),
 ):
     lf = pl.scan_parquet(list((env.STAGED_LOC / dataset).glob("*.par*")))
 
@@ -47,6 +51,8 @@ def main(
         lf = lf.filter(pl.col(time_col) >= start_time)
     if end_time is not None:
         lf = lf.filter(pl.col(time_col) < end_time)
+    if filter:
+        lf = lf.filter(config.data.train.dataset.filter)
 
     n_buckets = len(buckets)
     for col in describe_cols:
@@ -54,7 +60,6 @@ def main(
             f"{buckets[i]}-{buckets[i + 1]}": None for i in range(n_buckets - 1)
         }
         weights = {k: v for k, v in bucket_counts.items()}
-
         for i in range(n_buckets - 1):
             bucket_counts[f"{buckets[i]}-{buckets[i + 1]}"] = (
                 lf.filter((pl.col(col) >= buckets[i]) & (pl.col(col) < buckets[i + 1]))
@@ -63,14 +68,24 @@ def main(
                 .item()
             )
         total = sum([v for v in bucket_counts.values()])
+
         for k in weights.keys():
+            if bucket_counts[k] == 0:
+                weights[k] = float("nan")
+                continue
             weights[k] = total / ((n_buckets - 1) * bucket_counts[k])
+
+        proportions = {k: round((v / total) * 100, 1) for k, v in bucket_counts.items()}
 
         print()
         logger.info(f"Describing {col}")
         logger.info("counts: ")
 
-        logger.info(bucket_counts)
+        logger.info([f"{k}:" + f"{v:,}" for k, v in bucket_counts.items()])
+
+        logger.info("proportions: ")
+        logger.info([f"{k}:" + f"{v:,}" for k, v in proportions.items()])
+
         logger.info("weights: ")
         logger.info(weights)
 

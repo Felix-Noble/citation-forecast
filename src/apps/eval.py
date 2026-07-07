@@ -1,8 +1,9 @@
-import ast
 import copy
 import logging
 import os
+import shutil
 import sys
+import time
 from contextlib import nullcontext
 from datetime import datetime
 from logging import getLogger
@@ -43,9 +44,6 @@ app = typer.Typer(pretty_exceptions_enable=False)
 
 @app.callback(invoke_without_command=True)
 def main(
-    model_name: str = typer.Option(
-        "", "--model-name", "-m", help="Model registry name"
-    ),
     prefix: str = typer.Option("", "--prefix", help="Prefix to mlflow run name"),
     run_id: str = typer.Option(
         "", "--run-id", "-id", help="MLflow run ID to load model checkpoint from"
@@ -76,20 +74,6 @@ def main(
         "--dataset-path",
         help="Path to local dataset to load, overwrite config var",
     ),
-    dataset: str = typer.Option(
-        "",
-        "--dataset",
-        help="Name of dataset class to load, determins formatting of x/y columns",
-    ),
-    dataset_kwargs: str = typer.Option(
-        "", "--dataset-kwargs", help="Key word agrs to pass to dataset construcor"
-    ),
-    x_columns: list[str] = typer.Option(
-        [], "--x-column", "-x", help="Input columns to load from dataset"
-    ),
-    y_columns: list[str] = typer.Option(
-        [], "--y-column", "-y", help="Target columns to load from dataset"
-    ),
     tracking_uri: str = typer.Option(
         "", "--tracking-uri", help="MLflow tracking uri, overwrites env var"
     ),
@@ -119,7 +103,12 @@ def main(
     EXPERIMENT: str = experiment if experiment else env.EXPERIMENT + "-EVAL"
     TEMP_DIR: Path = temp_dir / run_id
     CHECKPOINT_DIR = TEMP_DIR / "checkpoints"
-    PREDICTIONS_DIR = TEMP_DIR / "predictions"
+    PREDICTIONS_DIR = env.STAGED_LOC / "eval" / run_id / f"run-{prefix}"
+    if PREDICTIONS_DIR.exists():
+        logger.warning(f"Removing data in {PREDICTIONS_DIR}")
+        time.sleep(5)
+        shutil.rmtree(PREDICTIONS_DIR)
+    os.makedirs(PREDICTIONS_DIR)
     TRACKING_URI: str = tracking_uri if tracking_uri else env.TRACKING_URI
     # TODO assert that tracking URI is listening/connected
     t_delta_map = {
@@ -220,10 +209,22 @@ def main(
     )
     loss_fn = build_loss(config=eval_config)
     logger.info(f"Model {model.__module__} loaded to {device}")
-    logger.info(f"Starting temporal iteration: from ... to... interval...")
 
+    evaluator_class = config.train.evaluator
+    evaluator = evaluator_class(
+        evaluator_class.config(
+            model=model,
+            prefix="val",
+            loss_fn=loss_fn,
+            tracker=metric_tracker,
+            stream=stream_context,
+            device=device,
+        )
+    )
     current_t_start: datetime = start_date
-    with mlflow.start_run(run_name=f"{prefix}{dataset_path}-{run_id}"):
+    with mlflow.start_run(
+        run_name=f"{prefix}-{model.__module__.split('.')[-1]}-{dataset_path}-{run_id}"
+    ):
         mlflow.log_params(ctx.params)
         while True:
             current_t_end: datetime = datetime(
@@ -234,10 +235,12 @@ def main(
             if end_date is not None and current_t_end > end_date:
                 current_t_end = end_date
 
-            logger.debug(f"Windwo from - {current_t_start} to - {current_t_end}")
             window_config = copy.deepcopy(config.data.test.dataset)
             window_config.t_start = current_t_start
-            window_config.t_end = current_t_start
+            window_config.t_end = current_t_end
+            logger.debug(
+                f"Windwo from - {window_config.t_start} to - {window_config.t_end}"
+            )
 
             metric_tracker.export = True
             metric_tracker.export_loc = (
@@ -258,24 +261,17 @@ def main(
             example_progress = example_progress_bar.add_task(
                 "Examples",
                 total=len(test_dataset)
-                if config.data.test.loader.samplers is None
+                if config.data.test.loader.samples is None
                 else config.data.test.loader.samples,
             )
 
-            eval_model(
-                model=model,
-                loss_fn=loss_fn,
-                dataloader=test_dataloader,
-                example_progress=example_progress_bar,
-                examples_done=example_progress,
-                stream_context=stream_context,
-                stream_sync=stream_sync,
-                metric_tracker=metric_tracker,
-                device=device,
-                config=config,
-            )
+            for batch_i, batch in enumerate(test_dataloader):
+                _ = evaluator.step(batch)
+                example_progress_bar.update(
+                    example_progress, advance=config.data.test.loader.batch_size
+                )
             _ = metric_tracker.calc_metrics(
-                prefix="test",
+                prefix="val",
                 step=current_t_start.year,
             )
 
@@ -289,6 +285,7 @@ def main(
                 timestamp=current_t_start.year,
                 synchronous=False,
             )
+            mlflow.log_metric("examples", len(test_dataset), step=current_t_start.year)
             metric_tracker.clear()
             example_progress_bar.reset(
                 example_progress, description="Examples ", total=len(test_dataset)

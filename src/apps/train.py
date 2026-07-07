@@ -19,7 +19,6 @@ from builders import (
     build_train_tracker,
 )
 from config import env
-from data import PortionSampler
 from data.dataloaders import DataLoader
 from training.callbacks import isnan_async
 from training.tracking import (
@@ -159,7 +158,7 @@ def main(
         config=config.data.train.dataset,
         env=config.env,
     )
-    test_dataset = config.data.test.clss(
+    val_dataset = config.data.test.clss(
         config=config.data.test.dataset,
         env=config.env,
     )
@@ -167,29 +166,22 @@ def main(
     if config.data.train.loader.samples is None:
         train_examples_per_epoch = len(train_dataset)
     else:
-        train_examples_per_epoch = config.data.train.loader.shuffle
+        train_examples_per_epoch = config.data.train.loader.samples
 
     if config.data.test.loader.samples is None:
-        test_examples_per_epoch = len(test_dataset)
+        val_examples_per_epoch = len(val_dataset)
     else:
-        test_examples_per_epoch = config.data.test.loader.shuffle
+        val_examples_per_epoch = config.data.test.loader.samples
 
     train_dataloader = DataLoader(
         dataset=train_dataset,
         config=config.data.train.loader,
     )
 
-    test_dataloader = DataLoader(
-        dataset=test_dataset,
+    val_dataloader = DataLoader(
+        dataset=val_dataset,
         config=config.data.test.loader,
     )
-
-    n_batches = len(train_dataloader)
-    grad_accumulation_steps_gpu = torch.tensor(
-        config.train.accumulation_steps, device=device
-    )
-
-    executor = ThreadPoolExecutor(max_workers=2)
 
     stream = torch.cuda.Stream() if torch.cuda.is_available() else None
     stream_context = (
@@ -200,7 +192,7 @@ def main(
     (
         epoch_progress,
         example_progress,
-        eval_example_progress,
+        val_example_progress,
     ) = build_progress_bars(disable=not progress)
 
     trainer_class = config.train.trainer
@@ -216,6 +208,18 @@ def main(
         examples_per_epoch=train_examples_per_epoch,
     )
     trainer = trainer_class(trainer_config)
+
+    evaluator_class = config.train.evaluator
+    evaluator = evaluator_class(
+        evaluator_class.config(
+            model=model,
+            prefix="val",
+            loss_fn=loss_fn,
+            tracker=metric_tracker,
+            stream=stream_context,
+            device=device,
+        )
+    )
     import mlflow
 
     mlflow.set_tracking_uri(env.TRACKING_URI)
@@ -247,6 +251,57 @@ def main(
 
     with mlflow.start_run(run_name=run_name, parent_run_id=parent_id):
         # mlflow.log_artifact("./config")
+        mlflow.log_figure(
+            train_dataset.figure,
+            f"train_{config.data.train.dataset.y[0]}.png",
+            save_kwargs={"dpi": 72},
+        )
+
+        mlflow.log_figure(
+            train_dataset.figure_log,
+            f"train_{config.data.train.dataset.y[0]}_log.png",
+            save_kwargs={"dpi": 72},
+        )
+
+        mlflow.log_figure(
+            val_dataset.figure,
+            f"val_{config.data.test.dataset.y[0]}.png",
+            save_kwargs={"dpi": 72},
+        )
+
+        mlflow.log_figure(
+            val_dataset.figure_log,
+            f"val_{config.data.test.dataset.y[0]}_log.png",
+            save_kwargs={"dpi": 72},
+        )
+
+        mlflow.log_params(
+            {
+                "train.examples": len(train_dataset),
+                "val.examples": len(val_dataset),
+            }
+        )
+        mlflow.log_params(
+            {f"model.{k}": v for k, v in config.model.model.__dict__.items()}
+        )
+        mlflow.log_params({"model.class": model.__module__.split(".")[-1]})
+        mlflow.log_params({f"train.{k}": v for k, v in config.train.__dict__.items()})
+        mlflow.log_params(
+            {
+                f"data.train.dataset.{k}": v
+                for k, v in config.data.train.dataset.__dict__.items()
+            }
+        )
+
+        mlflow.log_params(
+            {"train.dataset.class": train_dataset.__module__.split(".")[-1]}
+        )
+        mlflow.log_params(
+            {
+                f"data.train.loader.{k}": v
+                for k, v in config.data.train.loader.__dict__.items()
+            }
+        )
         model_file = (
             get_root_dir()
             / "src"
@@ -259,16 +314,16 @@ def main(
 
         epoch_progress.start()
         example_progress.start()
-        eval_example_progress.start()
+        val_example_progress.start()
 
         epochs_done = epoch_progress.add_task("Epochs", total=config.train.epochs)
         examples_done = example_progress.add_task(
             "Train Examples", total=train_examples_per_epoch
         )
-        eval_examples_done = eval_example_progress.add_task(
-            "Eval Examples", total=test_examples_per_epoch
+        val_examples_done = val_example_progress.add_task(
+            "Eval Examples", total=val_examples_per_epoch
         )
-        for epoch in range(start_epoch, start_epoch + config.train.epochs + 1):
+        for epoch in range(start_epoch, start_epoch + config.train.epochs):
             trainer.start_epoch(epoch)
             log_lrs(scheduler, epoch)
             model.train()
@@ -278,60 +333,15 @@ def main(
                 description="Train examps",
                 total=train_examples_per_epoch,
             )
-            eval_example_progress.reset(
+            val_example_progress.reset(
                 examples_done,
                 description="Eval examps",
-                total=test_examples_per_epoch,
+                total=val_examples_per_epoch,
             )
 
             for batch_i, batch in enumerate(train_dataloader):
                 loss = trainer.step(batch)
 
-                # metric_tracker.process_values((batch.y.clone(),), ('train_y',))
-                #                with stream_context:
-                #                    x = batch.x.to(device, non_blocking=True)
-                #                    y = batch.y.to(device, non_blocking=True)
-                #                    mask = batch.mask.to(device, non_blocking=True)
-                #                stream_sync()
-                #
-                #                torch.compiler.cudagraph_mark_step_begin()
-                #                logits, probs = model.forward(x, mask)
-                #                loss = loss_fn(
-                #                    weight=batch.weight, logits=logits, probs=probs, target=y
-                #                )
-                #
-                #                loss_cpu = loss.detach().clone()
-                #                loss = loss / grad_accumulation_steps_gpu
-                #
-                #                loss.backward()
-                #                if (
-                #                    batch_i + 1
-                #                ) % config.train.grad_accumulation_steps == 0 or batch_i == n_batches:
-                #                    optimizer.step()
-                #                    optimizer.zero_grad(set_to_none=True)
-                #
-                #                loss_cpu = loss_cpu.item()
-                #                metric_tracker.log_metric("train_loss", loss_cpu, x.shape[0])
-                # metric_tracker.process_values((logits.detach().clone(), probs.detach().clone()), ('train_logits', 'train_probs'))
-
-                #                executor.submit(isnan_async, loss, logger)
-                #                mlflow.log_metric(
-                #                    "train_loss-batch",
-                #                    loss,
-                #                    synchronous=False,
-                #                    step=int(
-                #                        (epoch - 1) * examples_per_epoch
-                #                        + batch_i * config.train.batch_size
-                #                    ),
-                #                )
-                #
-                #                metrics: dict[str, torch.Tensor] = calc_metrics(
-                #                    config=config, probs=probs, targets=y
-                #                )
-                #                for k, v in metrics.items():
-                #                    metric_tracker.log_metric(f"train_{k}", v.item(), x.shape[0])
-                #
-                #                del loss, metrics, probs
                 #
                 example_progress.update(
                     examples_done, advance=config.data.train.loader.batch_size
@@ -351,20 +361,13 @@ def main(
             scheduler.step()
 
             if epoch % config.train.eval_interval == 0:
-                eval_model(
-                    model=model,
-                    loss_fn=loss_fn,
-                    dataloader=test_dataloader,
-                    example_progress=eval_example_progress,
-                    examples_done=eval_examples_done,
-                    stream_context=stream_context,
-                    stream_sync=stream_sync,
-                    metric_tracker=metric_tracker,
-                    device=device,
-                    config=config,
-                )
+                for batch_i, batch in enumerate(val_dataloader):
+                    _ = evaluator.step(batch)
+                    val_example_progress.update(
+                        val_examples_done, advance=config.data.test.loader.batch_size
+                    )
                 _ = metric_tracker.calc_metrics(
-                    prefix="test",
+                    prefix="val",
                     step=epoch,
                 )
             _ = metric_tracker.calc_metrics(
