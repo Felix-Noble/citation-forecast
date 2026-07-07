@@ -1,25 +1,60 @@
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
+
+import polars as pl
+import torch
 
 from data import datasets as dd
 from data.dataloaders import DataLoaderConfig
 
-_dataset = dd.LogRegressDataset
-_train_loc = "all-licensed-1800-2027-lowercase-T2A2"
-_test_loc = "all-licensed-1800-2027-lowercase-T2A2"
-_x = ['field_name_tokens', 'subfield_name_tokens', 'source_name_tokens', 'title_tokens', "abstract_tokens"]
+_dataset = dd.BinaryThresholdDataset
+_train_loc = "all-lowercase-2"
+_test_loc = "all-lowercase-2"
+_x = [
+    "subfield_name_tokens",
+    "source_name_tokens",
+    "title_tokens",
+    "abstract_tokens",
+]
 _y = ["cited_by_count"]
-_theta = 0
+_meta = ["field_id", "subfield_name"]  # test:topic name
+_filter = (pl.col("cited_by_count") >= 0) & (pl.col("field_id") == 27)  # medicine'
+_period = 5
+_offset = -6
+_t_unit = "y"
+_cat_cols = ["topic_name"]
+_sort_cols = ["cited_by_count"]
+_add_x = _x[1:]
+_top_k = 1
 
-_train_start = date(1990, 1,1)
-_train_end = date(2010, 1, 1) 
-_test_start = date(2020, 1, 1)
-_test_end = date(2021, 1, 1)
+_theta = 50
+_boundaries = torch.tensor([1, 10])
+# 10, 100
+_min = 0
+_max = 7000
 
-_pad_token_id=199999
+_weights = torch.tensor([0.9, 2.95])
+_train_max_len = 400
+_test_max_len = 400
+_graph_max_len = 10000
+
+_train_start = date(1800, 1, 1)
+_train_end = date(2000, 1, 1)
+_test_start = date(2000, 1, 1)
+_test_end = date(2001, 1, 1)
+
+_pad_token_id = 199999
+_max_mem_rows = int(1e6)
 _num_workers = 2
+_train_batch_size = 16 * 6
+_test_batch_size = 16 * 6
 _prefetch_factor = 4
-_subsample = None
+
+_train_subsample = None
+_test_subsample = None
+
+_train_loader_samples = 100_000
+_test_loader_samples = None
 
 
 @dataclass
@@ -28,35 +63,48 @@ class Train:
     dataset = _dataset.config(
         x=_x,
         y=_y,
-        max_len=300,
-        n_buckets=2,
+        meta_cols=_meta,
+        filter=_filter,
+        max_len=_train_max_len,
         pad_token_id=_pad_token_id,
-        weights=None,
-        shuffle=True,
+        weights=_weights,
+        shuffle=False,
         sample=None,
         loc=_train_loc,
         return_mask=True,
+        id_col="id",
         truncate=True,
         truncate_method="drop",
         pad=True,
-        name="test-dataset",
+        name="train-dataset",
         auto_remove=True,
         time_col="publication_date",
         t_start=_train_start,
         t_end=_train_end,
         return_id=False,
-        id_col="",
-        subsample=_subsample,
+        subsample=_train_subsample,
         theta=_theta,
+        boundaries=_boundaries,
+        max=_max,
+        min=_min,
+        category_cols=_cat_cols,
+        sort_cols=_sort_cols,
+        period=_period,
+        offset=_offset,
+        t_unit=_t_unit,
+        top_k=_top_k,
+        add_x=_add_x,
+        graph_max_len=_graph_max_len,
+        max_mem_rows=_max_mem_rows,
     )
     loader = DataLoaderConfig(
-        batch_size=512 * 5,
+        batch_size=_train_batch_size,
         num_workers=_num_workers,
         prefetch_factor=_prefetch_factor,
         persistent_workers=False,
         pin_memory=True,
-        shuffle=True,
-        samples=None,
+        shuffle=False,
+        samples=_train_loader_samples,
         drop_last=True,
     )
 
@@ -67,8 +115,9 @@ class Test:
     dataset = _dataset.config(
         x=_x,
         y=_y,
-        max_len=500,
-        n_buckets=2,
+        meta_cols=_meta,
+        filter=_filter,
+        max_len=_test_max_len,
         pad_token_id=_pad_token_id,
         weights=None,
         shuffle=True,
@@ -86,17 +135,29 @@ class Test:
         t_end=_test_end,
         return_id=True,
         id_col="id",
-        subsample=_subsample,
+        subsample=_test_subsample,
         theta=_theta,
+        boundaries=_boundaries,
+        max=_max,
+        min=_min,
+        category_cols=_cat_cols,
+        sort_cols=_sort_cols,
+        period=_period,
+        offset=_offset,
+        t_unit=_t_unit,
+        top_k=_top_k,
+        add_x=_add_x,
+        graph_max_len=_graph_max_len,
+        max_mem_rows=_max_mem_rows,
     )
     loader = DataLoaderConfig(
-        batch_size=16 * 70,
+        batch_size=_test_batch_size,
         num_workers=_num_workers,
         prefetch_factor=_prefetch_factor,
         persistent_workers=False,
         pin_memory=True,
         shuffle=False,
-        samples=None,
+        samples=_test_loader_samples,
         drop_last=True,
     )
 
