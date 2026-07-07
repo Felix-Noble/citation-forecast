@@ -12,6 +12,7 @@ setup.py
 *.obj
 
 # Other
+mlruns/
 mlartifacts/
 cmd.sh
 models/
