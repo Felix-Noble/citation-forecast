@@ -56,9 +56,11 @@ def eval_model[T_Batch](
             #                "test_sigma", torch.mean(out.sigma.detach()).item(), x.shape[0]
             #            )
 
-            metric_tracker.process_values(
-                (out.logits.detach(), out.probs.detach()), ("test_logits", "test_probs")
-            )
+#            metric_tracker.process_values(
+#                (out.logits.detach(), out.probs.detach()), ("test_logits", "test_probs")
+#            )
+
+            metric_tracker.log_metric("test_sigma", torch.mean(out.sigma.detach()).item(), batch.x.shape[0])
             example_progress.update(
                 examples_done, advance=config.data.test.loader.batch_size
             )
