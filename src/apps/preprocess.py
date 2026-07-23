@@ -3,7 +3,7 @@ import os
 os.environ["TOKENIZERS_PARALLELISM"] = "true"
 import json
 import math
-import shutil
+import gc
 from datetime import datetime
 from logging import getLogger
 from pathlib import Path
@@ -25,6 +25,68 @@ logger = getLogger(__name__)
 _ = setup_logger(logger)
 app = typer.Typer(pretty_exceptions_enable=False)
 
+from transformers import AutoModel, AutoTokenizer
+import polars as pl
+import torch
+
+MODEL_NAME = "answerdotai/ModernBERT-base"
+tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
+# 2. LOAD DIRECTLY IN BFLOAT16 (Crucial Step!)
+model = AutoModel.from_pretrained(
+    MODEL_NAME,
+    dtype=torch.bfloat16,  # Force HF to download/load in BF16 directly
+    attn_implementation="sdpa"   # Keep fast attention active
+)
+if not os.path.exists(MODEL_NAME):
+    tokenizer.save_pretrained(MODEL_NAME)
+    model.save_pretrained(MODEL_NAME)
+
+bos_token = tokenizer.cls_token
+eos_token = tokenizer.sep_token
+
+device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
+logger.info(f'Device: {device}')
+model = model.to(device).eval()
+model.compile(mode='default')
+
+def embed_batch(series: pl.Series, *args, **kwargs) -> pl.Series:
+    """Helper function to process a batch of strings and return embeddings."""
+    # Convert the Polars Series batch to a Python list of strings
+    texts = series.to_list()
+
+    # Tokenize inputs
+    inputs = tokenizer(
+        texts, padding=True, truncation=True, return_tensors="pt"
+    ).to(device)
+
+    attention_mask = inputs["attention_mask"]      # Shape: [Batch, Seq_Len]
+        # Generate embeddings without computing gradients
+    with torch.no_grad():
+        outputs = model(**inputs)
+
+        # 1. Extract the token embeddings and the attention mask
+        token_embeddings = outputs.last_hidden_state  # Shape: [Batch, Seq_Len, Hidden_Dim]
+
+        # 2. Expand the 2D mask to a 3D mask to match the embeddings
+        # Becomes shape: [Batch, Seq_Len, Hidden_Dim]
+        input_mask_expanded = attention_mask.unsqueeze(-1).expand(token_embeddings.size()).float()
+
+        # 3. Zero out the padding tokens and sum up the valid token vectors
+        sum_embeddings = torch.sum(token_embeddings * input_mask_expanded, dim=1)
+
+        # 4. Count the number of non-padded tokens (clamp to 1e-9 to prevent division-by-zero)
+        sum_mask = torch.clamp(input_mask_expanded.sum(dim=1), min=1e-9)
+
+        # 5. Calculate the true, uncorrupted mean
+        embeddings = sum_embeddings / sum_mask
+
+    # Convert PyTorch tensor back to a list of lists (floats) for Polars
+    embeddings_list = embeddings.float().cpu().tolist()
+
+    torch.cuda.empty_cache()
+
+    # Return as a Polars Array type (highly optimized for fixed-size vectors)
+    return pl.Series(embeddings_list, dtype=pl.Array(pl.Float32, width=model.config.hidden_size))
 
 @app.callback(invoke_without_command=True)
 def main(
@@ -80,7 +142,10 @@ def main(
         help="Data columsn to tokenise, must be str, pass multiple flags for multiple cols",
     ),
     n_partitions: int = typer.Option(
-        64, "--partitions", "-p", help="N. partitions to split the dataset into"
+        0,"--partitions", "-p", help="N. partitions to split the dataset into"
+    ),
+    rows_per_part: int = typer.Option(
+        0,'--rows-per-part','-rp', help='Rows per partition'
     ),
     compression_level: int = typer.Option(
         1, "--compression-level", help="zstd compression level"
@@ -130,19 +195,12 @@ def main(
     assert len(clean_cols) == len(clean_levels) == len(clean_min_len), (
         "Clean cols, levels, and min-lens must be give in in same quanity"
     )
+    assert not (rows_per_part and n_partitions), 'Define partition split with one or the other'
 
     try:
         # Setup
         os.environ["POLARS_MAX_THREADS"] = f"{max_threads}"
         import polars as pl
-
-        def value_alternator(n: int = 2):
-            i = 0
-            while True:
-                yield i
-                i += 1
-                if i >= n:
-                    i = 0
 
         def measure_lf(lf: pl.LazyFrame, run=False) -> float:
             if run:
@@ -150,215 +208,151 @@ def main(
             else:
                 return float("nan")
 
-        def export_parquet(
-            lf: pl.LazyFrame,
-            destination: Path,
-            n_partitions: int,
-            progress_bar: Progress | None = None,
-            progress_task: TaskID | None = None,
-            compression_level: int = 1,
-            n_rows: int | float | None = None,
-        ) -> None:
-
-            if n_rows is None or math.isnan(n_rows):
-                n_rows = measure_lf(lf, True)
-
-            rows_per_part = math.ceil(n_rows / n_partitions)
-
-            lf = lf.with_row_index("idx").with_columns(
-                (pl.col("idx") // rows_per_part).clip(0, n_partitions - 1).alias("part")
-            )
-            # 3. Sink each part
-            for i in range(n_partitions):
-                (
-                    lf.filter(pl.col("part") == i)
-                    .drop(["idx", "part"])
-                    .sink_parquet(
-                        destination / f"part_{i}.parquet",
-                        statistics=True,
-                        compression="zstd",
-                        compression_level=compression_level,
-                    )
-                )
-                if progress_bar is not None and progress_task is not None:
-                    progress_bar.update(progress_task, advance=rows_per_part)
-
         if not name:
             destination = Path(origin).parent / f"{str(Path(origin).stem)}_preprocessed"
         else:
             destination = Path(origin).parent / name
-        if os.path.exists(destination):
-            assert len(os.listdir(destination)) < 1, "Ensure destination is empty"
 
-        lf: pl.LazyFrame = pl.scan_parquet(
+        os.makedirs(destination)
+
+        lf_whole: pl.LazyFrame = pl.scan_parquet(
             list(origin.glob("*.par*")), extra_columns="ignore"
         )
-        n_rows: float = measure_lf(lf)
-        alternator = value_alternator()
 
-        progress_bar = Progress(
-            TextColumn("[bold blue] {task.description}", justify="left"),
-            BarColumn(bar_width=40),
-            TextColumn("[task.completed]{task.completed}/{task.total}"),
-            TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
-            TimeElapsedColumn(),
-            TextColumn("<"),
-            TimeRemainingColumn(),
-            speed_estimate_period=60.0 * 10,  # mins
-        )
-        progress_bar.start()
 
-        # Main Logic
-        if dry_run:
-            lf = lf.slice(0, 500)
-
-        # License filtering
         if filt_license:
-            l1 = measure_lf(lf)
-            lf = lf.filter(pl.col("is_license_safe"))
-            l2 = measure_lf(lf)
-            logger.info(f"Dropped {l1 - l2:,} with non-permissive licenses")
+            lf_whole = lf_whole.filter(pl.col("is_license_safe"))
         else:
             logger.warning("Including non-permissive licenses")
-
-        for col in replace_non_permissive_cols:
-            logger.info(f"Replacing non-permissive {col} with {None}")
-            lf = lf.with_columns(
-                pl.when(pl.col("is_license_safe") == False)
-                .then(pl.lit(None, dtype=lf.schema[col]))
-                .otherwise(pl.col(col))
-                .alias(col)
-            )
-
-        if clean_cols:
-            for col, level, min_len in zip(clean_cols, clean_levels, clean_min_len):
-                l1 = measure_lf(lf)
-                lf = clean_step(
-                    lf=lf,
-                    col=col,
-                    min_len=min_len,
-                    level=level,
-                )
-                l2 = measure_lf(lf)
-                logger.info(f"Dropped {l1 - l2:,} in {col} at clean lvl {level}")
-        else:
-            logger.warning("No cols selected for cleaning")
-
-        if drop_na_cols:
-            for col in drop_na_cols:
-                l1 = measure_lf(lf)
-                lf = lf.drop_nulls(subset=col)
-                l2 = measure_lf(lf)
-                logger.info(f"Dropped {l1 - l2:,} nulls in {col}")
-        else:
-            logger.warning("No columns set to drop nulls")
-
         if start_date is not None:
-            l1 = measure_lf(lf)
-            lf = lf.filter((pl.col("publication_date") >= start_date))
-            l2 = measure_lf(lf)
-            logger.info(f"Dropped {l1 - l2:,} prior to {start_date}")
+            lf_whole = lf_whole.filter((pl.col("publication_date") >= start_date))
         else:
             logger.warning("No start date set")
 
         if end_date is not None:
-            l1 = measure_lf(lf)
-            lf = lf.filter((pl.col("publication_date") < end_date))
-            l2 = measure_lf(lf)
-            logger.info(f"Dropped {l1 - l2:,} after {end_date}")
+            lf_whole = lf_whole.filter((pl.col("publication_date") < end_date))
         else:
             logger.warning("No end date set")
-
         if field_id:
-            l1 = measure_lf(lf)
-            lf = lf.filter(pl.col("field_id").is_in(field_id))
-            l2 = measure_lf(lf)
-            logger.info(f"Dropped {l1 - l2:,} field id not in {field_id}")
+            lf_whole = lf_whole.filter(pl.col("field_id").is_in(field_id))
         else:
             logger.warning("No field id filter set")
 
         if languages:
-            l1 = measure_lf(lf)
-            lf = lf.filter(pl.col("language").is_in(languages))
-            l2 = measure_lf(lf)
-            logger.info(f"Dropped {l1 - l2:,} lang not in {languages}")
+            lf_whole = lf_whole.filter(pl.col("language").is_in(languages))
         else:
             logger.warning("No Language filters set")
 
         if types:
-            l1 = measure_lf(lf)
-            lf = lf.filter(pl.col("type").is_in(types))
-            l2 = measure_lf(lf)
-            logger.info(f"Dropped {l1 - l2:,} type not in {types}")
+            lf_whole = lf_whole.filter(pl.col("type").is_in(types))
         else:
             logger.warning("No document type filters set")
 
-        if embed_model:
-            logger.warning("Embed feature is a work in progress, leave out for now")
+        n_rows: float = measure_lf(lf_whole, True)
+        if n_partitions:
+            rows_per_part = math.ceil(n_rows / n_partitions)
+        elif rows_per_part:
+            n_partitions = math.ceil(n_rows / rows_per_part)
 
-        # Checkpoint
-        n_rows = measure_lf(lf, True)
-        progress = progress_bar.add_task("Clean/Filter", total=n_rows)
+        lf_whole = lf_whole.with_row_index("idx").with_columns(
+                (pl.col("idx") // rows_per_part).clip(0, n_partitions - 1).alias("part")
+            )
 
-        temp_loc = Path(f"./temp{next(alternator)}")
-        os.makedirs(temp_loc)
-        export_parquet(
-            lf=lf,
-            n_rows=n_rows,
-            destination=temp_loc,
-            n_partitions=n_partitions,
-            progress_bar=progress_bar,
-            progress_task=progress,
-            compression_level=4,
-        )
-
-        lf = pl.scan_parquet(temp_loc)
-        n_rows: int = (
-            pl.scan_parquet(temp_loc)
-            .select(pl.len())
-            .collect(engine="streaming")
-            .item()
-        )
-        # Export
-        if dry_run:
-            print(lf.collect())
+        progress_bar = Progress(
+                    TextColumn("[bold blue] {task.description}", justify="left"),
+                    BarColumn(bar_width=40),
+                    TextColumn("[task.completed]{task.completed}/{task.total}"),
+                    TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+                    TimeElapsedColumn(),
+                    TextColumn("<"),
+                    TimeRemainingColumn(),
+                    speed_estimate_period=60.0 * 10,  # mins
+                )
+        progress_bar.start()
         progress = progress_bar.add_task("Rows", total=n_rows)
+
+        # Main Logic
+        if dry_run:
+            lf_whole = lf_whole.slice(0, 500)
+
+        for i in range(n_partitions):
+            lf = lf_whole.filter(pl.col("part") == i).drop(["idx", "part"])
+
+            for col in replace_non_permissive_cols:
+                logger.info(f"Replacing non-permissive {col} with {None}")
+                lf = lf.with_columns(
+                    pl.when(pl.col("is_license_safe") == False)
+                    .then(pl.lit(None, dtype=lf.schema[col]))
+                    .otherwise(pl.col(col))
+                    .alias(col)
+                )
+
+            if clean_cols:
+                for col, level, min_len in zip(clean_cols, clean_levels, clean_min_len):
+                    l1 = measure_lf(lf)
+                    lf = clean_step(
+                        lf=lf,
+                        col=col,
+                        min_len=min_len,
+                        level=level,
+                    )
+                    l2 = measure_lf(lf)
+                    logger.info(f"Dropped {l1 - l2:,} in {col} at clean lvl {level}")
+            elif i == 0:
+                logger.warning("No cols selected for cleaning")
+
+            if drop_na_cols:
+                for col in drop_na_cols:
+                    lf = lf.drop_nulls(subset=col)
+            elif i == 0:
+                logger.warning("No columns set to drop nulls")
+
+
+            if embed_model:
+                if i == 0:
+                    logger.info(f"Embedding {', '.join(embed_cols)} with {embed_model}")
+                lf = (
+                    lf.drop_nulls(embed_cols)
+                    .with_columns(to_embed=(
+                        bos_token +
+                        pl.concat_str([pl.col(col) for col in embed_cols], separator=eos_token+bos_token)
+                        + eos_token)
+                    ).with_columns(
+                        pl.col('to_embed')
+                        .map_batches(embed_batch, return_dtype=pl.Array(pl.Float32, width=model.config.hidden_size))
+                        .alias(f"{' '.join(embed_cols)}_embedding")
+                    ).drop('to_embed')
+                )
+
+            if tokeniser:
+                if i == 0:
+                    logger.info(f"Tokenising {', '.join(tokenise_cols)} with {tokeniser}")
+                lf = tokenise_step(
+
+                    lf=lf,
+                    tokeniser_path=tokeniser,
+                    columns=tokenise_cols,
+                )
+
+            if dry_run:
+                print(lf.collect())
+                break
+
+            output_fname = destination / f"part_{i}.parquet"
+            lf.sink_parquet(
+                output_fname,
+                statistics=True,
+                compression="zstd",
+                compression_level=1,
+            )
+            n_written = pl.scan_parquet(output_fname).select(pl.len()).collect(engine="streaming").item()
+            progress_bar.update(progress, advance=n_written)
+
 
         os.makedirs(destination, exist_ok=True)
         metadata = {k: str(v) for k, v in ctx.params.items()}
         with open(destination / "metadata.json", "w") as f:
             json.dump(metadata, f)
-
-        if tokeniser:
-            for file in Path(temp_loc).glob("*.par*"):
-                lf_file = pl.scan_parquet(file)
-                rows = lf_file.select(pl.len()).collect().item()
-                lf_file = tokenise_step(
-                    lf=lf_file,
-                    tokeniser_path=tokeniser,
-                    columns=tokenise_cols,
-                )
-                lf_file.sink_parquet(
-                    destination / f"{file.stem}{file.suffix}",
-                    compression="zstd",
-                    compression_level=compression_level,
-                )
-                progress_bar.update(progress, advance=rows)
-
-        else:
-            export_parquet(
-                lf=lf,
-                destination=destination,
-                n_partitions=n_partitions,
-                progress_bar=progress_bar,
-                progress_task=progress,
-                compression_level=compression_level,
-            )
-
-        for i in range(2):
-            logger.info(f"Deleting temp{i}")
-            if os.path.exists(f"./temp{i}"):
-                shutil.rmtree(f"./temp{i}")
 
     except Exception as e:
         try:

@@ -117,7 +117,10 @@ def main(
                 pl.col("counts_by_year_years").list.get(0, null_on_oob=True)
                 - pl.col("publication_date").dt.year()
             )
-            + 1
+            .with_columns(cited_by_delta_first=pl.col("cited_by_dates").list.min())
+                cited_by_delta_first=pl.col("cited_by_dates").list.min()
+                - pl.col("publication_date")
+            )
         )
     if dry_run:
         lf = lf.collect()
