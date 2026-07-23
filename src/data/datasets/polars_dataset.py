@@ -184,8 +184,6 @@ class PolarsDataset[T_Config](Dataset[PolarsDatasetOutput]):
                 logger.info(f"Taking {self.subsample} random subsamples")
                 lf = lf.collect(engine="streaming").sample(n=self.subsample).lazy()
 
-            self.figure_log = plot_target_distribution_polars(lf, self.y[0])
-            self.figure = plot_target_distribution_polars(lf, self.y[0], False)
 
             rows = lf.select(pl.len()).collect(engine="streaming").item()
             logger.info(
