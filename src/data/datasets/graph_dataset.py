@@ -10,7 +10,6 @@ import polars as pl
 import seaborn as sns
 import torch
 import torch.nn as nn
-from mpmath.libmp.libelefun import k
 from pydantic import BaseModel, ConfigDict
 from torch import Tensor
 from torch.utils.data import Dataset
@@ -23,7 +22,7 @@ logger = getLogger(__name__)
 _ = setup_logger(logger)
 
 
-class GraphDatasetConfig(BaseModel):
+class CitationGraphDatasetConfig(BaseModel):
     loc: str
     x: list[str]
     y: list[str]
@@ -50,9 +49,8 @@ class GraphDatasetConfig(BaseModel):
     category_cols: list[str]
     sort_cols: list[str]
     top_k: int
-    offset: int
-    period: int
-    t_unit: str
+    offset: str
+    period: str
     add_x: list[str]
     max_mem_rows: int
     model_config = ConfigDict(arbitrary_types_allowed=True)
@@ -62,7 +60,7 @@ class Env(Protocol):
     STAGED_LOC: Path
 
 
-class GraphDatasetOutput(NamedTuple):
+class CitationGraphDatasetOutput(NamedTuple):
     id: Tensor
     x: Tensor
     graph_x: Tensor
@@ -72,12 +70,12 @@ class GraphDatasetOutput(NamedTuple):
     graph_x_mask: Tensor
 
 
-class GraphDataset[T_Config](Dataset[GraphDatasetOutput]):
-    config = GraphDatasetConfig
+class GraphDataset[T_Config](Dataset[CitationGraphDatasetOutput]):
+    config = CitationGraphDatasetConfig
 
     def __init__(
         self,
-        config: GraphDatasetConfig,
+        config: CitationGraphDatasetConfig,
         env: Env,
     ):
         super().__init__()
@@ -110,13 +108,11 @@ class GraphDataset[T_Config](Dataset[GraphDatasetOutput]):
         self.x = config.x
         self.y = config.y
         self.add_x = config.add_x
-        assert len(config.category_cols) < 2
-        assert len(config.sort_cols) < 2
-        self.category_col = config.category_cols[0]
-        self.sort_col = config.sort_cols[0]
+
+        self.category_cols = config.category_cols
+        self.sort_cols = config.sort_cols
         self.offset = config.offset
         self.period = config.period
-        self.t_unit = config.t_unit
         self.top_k = config.top_k
 
         if self.subsample is not None:
@@ -126,13 +122,13 @@ class GraphDataset[T_Config](Dataset[GraphDatasetOutput]):
             set(
                 self.x
                 + self.meta_cols
-                + [self.category_col]
-                + [self.sort_col]
+                + self.category_cols
+                + self.sort_cols
                 + self.add_x
                 + [self.time_col]
             )
         )
-        columns = list(set(x_columns + self.y + [config.id_col]))
+        columns = list(set(x_columns + self.y + [config.id_col, "referenced_works"]))
         self.x_hot_path: Path = self.hot_path / "x.ipc"
         self.add_x_hot_path: Path = self.hot_path / "add_x.ipc"
         self.y_hot_path: Path = self.hot_path / "y.ipc"
@@ -157,48 +153,55 @@ class GraphDataset[T_Config](Dataset[GraphDatasetOutput]):
         self.figure_log = plot_target_distribution_polars(lf, self.y[0])
         self.figure = plot_target_distribution_polars(lf, self.y[0], False)
 
+                # Construct the conditional expression by iterating in reverse
+        final_sort_expr = pl.lit(None)
+        for idx, col in reversed(list(enumerate(config.category_cols))):
+            final_sort_expr = pl.when(
+                pl.col(col) == pl.col(f"{col}_referenced")
+            ).then(idx).otherwise(final_sort_expr)
+
         lf = lf.with_columns(
-            graph_x_single=pl.concat_list(self.add_x),
-            join_col=pl.col(self.time_col).dt.to_string() + pl.col(self.category_col),
-        )
+                    graph_x_single=pl.concat_list(self.add_x),
+                )
 
         graph_x_df = (
-            (
-                lf.filter(
-                    pl.col(self.sort_col)
-                    .rank(method="ordinal", descending=True)
-                    .over("join_col")
-                    <= self.top_k
+            lf.explode("referenced_works")
+            .join(
+                lf.select(
+                    [self.id_col, "graph_x_single"]
+                    + self.category_cols
+                    + self.sort_cols
+                ),
+                left_on="referenced_works",
+                right_on=self.id_col,
+                suffix="_referenced",
+            )
+            .filter(
+                pl.any_horizontal(
+                    [
+                        pl.col(cat_col) == pl.col(f"{cat_col}_referenced")
+                        for cat_col in self.category_cols
+                    ]
                 )
-                .collect(engine="streaming")
-                .sort([self.time_col, self.sort_col], descending=[False, True])
-                .lazy()
-            )
-            .rolling(
-                index_column=self.time_col,
-                period=f"{self.period}{self.t_unit}",  # The size of your
-                offset=f"{self.offset}{self.t_unit}",
-                group_by=self.category_col,  # Keep categories completely isolated
-            )
-            .agg(
-                [
-                    pl.col("graph_x_single")
-                    .sort_by(self.sort_col, descending=True)
-                    .head(self.top_k)
-                    .list.explode()
-                    .alias("graph_x"),
-                ]
             )
             .with_columns(
-                join_col=pl.col(self.time_col).dt.to_string()
-                + pl.col(self.category_col)
+                final_sort_col=final_sort_expr
             )
-            .unique("join_col")
-            .filter(pl.col("graph_x").list.len() >= 1)
+            .group_by(self.id_col)
+            .agg(
+                [
+                    pl.col("graph_x_single_referenced")
+                    .sort_by(['final_sort_col'] + self.sort_cols)
+                    .head(self.top_k)
+                    .list.explode()
+                    .alias("graph_x")
+                ]
+            )
         )
 
+        graph_x_df = graph_x_df.filter(pl.col("graph_x").list.len() >= 1)
         lf = (
-            lf.join(graph_x_df, on="join_col", how="inner")
+            lf.join(graph_x_df.lazy(), on=self.id_col, how="inner")
             .with_columns(
                 x=pl.concat_list(self.x),
                 y=pl.concat_list(self.y),
@@ -213,21 +216,13 @@ class GraphDataset[T_Config](Dataset[GraphDatasetOutput]):
             lf = lf.filter(pl.col("x").list.len() <= self.max_len)
             lf = lf.filter(pl.col("graph_x").list.len() <= self.graph_max_len)
 
-        self.graph_max_len = (
-            lf.select(pl.col("graph_x").list.len().max())
-            .collect(engine="streaming")
-            .item()
-        )
-        self.max_len = (
-            lf.select(pl.col("x").list.len().max()).collect(engine="streaming").item()
-        )
         if self.subsample is not None:
             logger.info(f"Taking {self.subsample} subsamples")
             lf = lf.slice(0, self.subsample)
 
         rows = lf.select(pl.len()).collect(engine="streaming").item()
         logger.info(
-            f"Formed {self.name}, {rows:,} rows where x len <= {self.max_len} & total graph length <= {self.graph_max_len}"
+            f"{rows:,} rows where x len <= {self.max_len} & total graph length <= {self.graph_max_len} to hotpath: {self.name}"
         )
         if rows > config.max_mem_rows:
             os.makedirs(self.hot_path, exist_ok=True)
@@ -235,10 +230,10 @@ class GraphDataset[T_Config](Dataset[GraphDatasetOutput]):
 
         if rows is None or rows > config.max_mem_rows:
             self.df: pl.DataFrame = pl.read_ipc(self.x_hot_path, memory_map=True)
-            logger.info(f"{self.name} cached to {self.hot_path}")
+            logger.info(f"Hot path {self.hot_path} loaded")
         else:
             self.df = lf.collect(engine="streaming")
-            logger.info(f"{self.name} loaded into mem")
+            logger.info(f"Hot path {self.hot_path} loaded into mem")
 
     def __len__(self) -> int:
         return len(self.df)
@@ -247,10 +242,10 @@ class GraphDataset[T_Config](Dataset[GraphDatasetOutput]):
         return x.long()
 
     def _format_y(self, y: Tensor) -> Tensor:
-        return y
+        return torch.tensor(y > 30, dtype=torch.float32)
 
     @override
-    def __getitem__(self, idx: int) -> GraphDatasetOutput:
+    def __getitem__(self, idx: int) -> CitationGraphDatasetOutput:
         id = torch.tensor(float("nan"))
         x = torch.tensor(float("nan"))
         graph_x = torch.tensor(float("nan"))
@@ -302,7 +297,7 @@ class GraphDataset[T_Config](Dataset[GraphDatasetOutput]):
             mask = (x != self.pad_value).bool()
             graph_x_mask = (graph_x != self.pad_value).bool()
 
-        out = GraphDatasetOutput(
+        out = CitationGraphDatasetOutput(
             id=id,
             x=x,
             graph_x=graph_x,
