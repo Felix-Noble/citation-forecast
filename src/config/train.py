@@ -6,7 +6,7 @@ import training.trainers as trainers
 # exported config
 trainer = trainers.ClassificationTrainer
 evaluator = evaluators.ClassificationEvaluator
-epochs: int = 32
+epochs: int = 8
 accumulation_steps: int = 1  # n batches until optimizer steps
 lr: float = 1e-3
 lr_milestones: tuple[int, ...] = (0,)

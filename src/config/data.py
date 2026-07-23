@@ -8,17 +8,18 @@ from data import datasets as dd
 from data.dataloaders import DataLoaderConfig
 
 _dataset = dd.BinaryThresholdDataset
-_train_loc = "all-lowercase-2"
-_test_loc = "all-lowercase-2"
+_train_loc = "all-lowercase-2-engineered"
+_test_loc = "all-lowercase-2-engineered"
 _x = [
-    "subfield_name_tokens",
-    "source_name_tokens",
+    #"field_name_tokens",
+    #"subfield_name_tokens",
+    #"source_name_tokens",
     "title_tokens",
     "abstract_tokens",
 ]
-_y = ["cited_by_count"]
-_meta = ["field_id", "subfield_name"]  # test:topic name
-_filter = (pl.col("cited_by_count") >= 0) & (pl.col("field_id") == 27)  # medicine'
+_y = ["cited_by_delta_years_first"]
+_meta = ["field_id", "subfield_name", 'cited_by_count']  # test:topic name
+_filter = (pl.col("cited_by_count") >= 1)
 _period = 5
 _offset = -6
 _t_unit = "y"
@@ -27,33 +28,33 @@ _sort_cols = ["cited_by_count"]
 _add_x = _x[1:]
 _top_k = 1
 
-_theta = 50
+_theta = 15
 _boundaries = torch.tensor([1, 10])
 # 10, 100
 _min = 0
 _max = 7000
 
-_weights = torch.tensor([0.9, 2.95])
+_weights = torch.tensor([1.07, 0.93])
 _train_max_len = 400
 _test_max_len = 400
 _graph_max_len = 10000
 
-_train_start = date(1800, 1, 1)
-_train_end = date(2000, 1, 1)
-_test_start = date(2000, 1, 1)
-_test_end = date(2001, 1, 1)
+_train_start = date(1920, 1, 1)
+_train_end = date(1970, 1, 1)
+_test_start = date(1970, 1, 1)
+_test_end = date(1971, 1, 1)
 
 _pad_token_id = 199999
 _max_mem_rows = int(1e6)
 _num_workers = 2
-_train_batch_size = 16 * 6
-_test_batch_size = 16 * 6
+_train_batch_size = 16
+_test_batch_size = 16
 _prefetch_factor = 4
 
 _train_subsample = None
 _test_subsample = None
 
-_train_loader_samples = 100_000
+_train_loader_samples = None#100_000
 _test_loader_samples = None
 
 

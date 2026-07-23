@@ -2,7 +2,7 @@ import torch
 
 import models
 
-clss = models.TransformerBinaryClass
+clss = models.TransformerEmbedClass
 model = clss.config(
     vocab_size=201_088,
     dtype=torch.float32,
@@ -14,9 +14,10 @@ model = clss.config(
     # n_abstractions=1,
     n_layers=8,
     # n_abstractions=1,
-    embed_dim=32,
-    hidden_dim=32 * 4,
+    embed_dim=1024,
+    hidden_dim=1024 * 4,
     n_out=1,
+    causal_mask=True,
     #    n_params_out: int = 0,
     dropout=0.05,
 )

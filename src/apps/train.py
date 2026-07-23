@@ -251,29 +251,6 @@ def main(
 
     with mlflow.start_run(run_name=run_name, parent_run_id=parent_id):
         # mlflow.log_artifact("./config")
-        mlflow.log_figure(
-            train_dataset.figure,
-            f"train_{config.data.train.dataset.y[0]}.png",
-            save_kwargs={"dpi": 72},
-        )
-
-        mlflow.log_figure(
-            train_dataset.figure_log,
-            f"train_{config.data.train.dataset.y[0]}_log.png",
-            save_kwargs={"dpi": 72},
-        )
-
-        mlflow.log_figure(
-            val_dataset.figure,
-            f"val_{config.data.test.dataset.y[0]}.png",
-            save_kwargs={"dpi": 72},
-        )
-
-        mlflow.log_figure(
-            val_dataset.figure_log,
-            f"val_{config.data.test.dataset.y[0]}_log.png",
-            save_kwargs={"dpi": 72},
-        )
 
         mlflow.log_params(
             {

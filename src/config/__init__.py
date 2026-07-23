@@ -9,6 +9,3 @@ __all__ = [
     "train",
 ]
 assert env.STAGED_LOC.exists(), "Staged loc must exist"
-
-assert (env.STAGED_LOC / data.train.dataset.loc).exists(), "train loc must exist"
-assert (env.STAGED_LOC / data.test.dataset.loc).exists(), "test loc must exist"
