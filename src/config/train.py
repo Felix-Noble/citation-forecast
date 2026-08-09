@@ -15,5 +15,5 @@ lr_eta_min: float = 1e-6
 weight_decay: float = 1e-3
 optimizer: str = "AdamW"
 loss_fn: str = "BinaryCrossEntropyLoss"
-eval_interval: int = 2
+eval_interval: int = 1
 checkpoint_interval: int = 2

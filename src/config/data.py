@@ -7,26 +7,22 @@ import torch
 from data import datasets as dd
 from data.dataloaders import DataLoaderConfig
 
-_dataset = dd.BinaryThresholdDataset
-_train_loc = "all-lowercase-2-engineered"
-_test_loc = "all-lowercase-2-engineered"
+_dataset = dd.GraphDataset
+_train_loc = "1920-2000-lowercase-2-embedded"
+_test_loc = "1920-2000-lowercase-2-embedded"
 _x = [
-    #"field_name_tokens",
-    #"subfield_name_tokens",
-    #"source_name_tokens",
-    "title_tokens",
-    "abstract_tokens",
+    'title abstract_embedding',
 ]
 _y = ["cited_by_delta_years_first"]
 _meta = ["field_id", "subfield_name", 'cited_by_count']  # test:topic name
-_filter = (pl.col("cited_by_count") >= 1)
+_filter = (pl.col("cited_by_count") >= 1) & (pl.col('referenced_works').list.len() >= 5)
 _period = 5
 _offset = -6
 _t_unit = "y"
-_cat_cols = ["topic_name"]
-_sort_cols = ["cited_by_count"]
-_add_x = _x[1:]
-_top_k = 1
+_cat_cols = ["topic_name", 'subfield_name', 'field_name', 'type']
+_sort_cols = ["publication_date"]
+_add_x = _x
+_top_k = 15
 
 _theta = 15
 _boundaries = torch.tensor([1, 10])
@@ -37,14 +33,16 @@ _max = 7000
 _weights = torch.tensor([1.07, 0.93])
 _train_max_len = 400
 _test_max_len = 400
-_graph_max_len = 10000
+_graph_max_len = 100
 
 _train_start = date(1920, 1, 1)
-_train_end = date(1970, 1, 1)
-_test_start = date(1970, 1, 1)
-_test_end = date(1971, 1, 1)
+_train_end = date(1990, 1, 1)
+_test_start = date(1990, 1, 1)
+_test_end = date(1991, 1, 1)
 
 _pad_token_id = 199999
+from .model import model
+_pad_value = torch.zeros(model.embed_dim, dtype=torch.float32)
 _max_mem_rows = int(1e6)
 _num_workers = 2
 _train_batch_size = 16
@@ -67,7 +65,7 @@ class Train:
         meta_cols=_meta,
         filter=_filter,
         max_len=_train_max_len,
-        pad_token_id=_pad_token_id,
+        pad_value=_pad_value,
         weights=_weights,
         shuffle=False,
         sample=None,
@@ -119,7 +117,7 @@ class Test:
         meta_cols=_meta,
         filter=_filter,
         max_len=_test_max_len,
-        pad_token_id=_pad_token_id,
+        pad_value=_pad_value,
         weights=None,
         shuffle=True,
         sample=None,

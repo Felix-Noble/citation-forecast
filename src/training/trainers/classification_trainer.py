@@ -15,14 +15,16 @@ class Batch(NamedTuple):
 class ClassificationTrainer(BaseTrainer, TrainerProtocol[TrainerConfig, Batch]):
     config: type[TrainerConfig] = TrainerConfig
 
+    def _to_device(self, val, device):
+        # Handles Tensors or nested custom objects that implement .to()
+        if hasattr(val, "to") and callable(val.to):
+            return val.to(device, non_blocking=True)
+        return val
+
     def move_to_device(self, batch: Batch) -> Batch:
         with self.stream:
-            out = Batch(
-                x=batch.x.to(self.device, non_blocking=True),
-                y=batch.y.to(self.device, non_blocking=True),
-                mask=batch.mask.to(self.device, non_blocking=True),
-                weight=batch.weight.to(self.device, non_blocking=True),
-            )
+            # type(batch)(*...) calls the namedtuple constructor with converted items
+            out = type(batch)(*(self._to_device(item, self.device) for item in batch))
         self.stream_sync()
         return out
 

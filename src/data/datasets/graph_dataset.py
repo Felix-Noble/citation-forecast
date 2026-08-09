@@ -3,7 +3,7 @@ import shutil
 from datetime import date, timedelta
 from logging import getLogger
 from pathlib import Path
-from typing import NamedTuple, Protocol, override
+from typing import NamedTuple, Protocol, override, Any
 
 import matplotlib.pyplot as plt
 import polars as pl
@@ -35,7 +35,7 @@ class CitationGraphDatasetConfig(BaseModel):
     sample: int | None
     return_mask: bool
     pad: bool
-    pad_token_id: int
+    pad_value: Any
     truncate: bool
     truncate_method: str
     name: str
@@ -49,8 +49,6 @@ class CitationGraphDatasetConfig(BaseModel):
     category_cols: list[str]
     sort_cols: list[str]
     top_k: int
-    offset: str
-    period: str
     add_x: list[str]
     max_mem_rows: int
     model_config = ConfigDict(arbitrary_types_allowed=True)
@@ -98,7 +96,7 @@ class GraphDataset[T_Config](Dataset[CitationGraphDatasetOutput]):
         self.max_len = config.max_len
         self.graph_max_len = config.graph_max_len
         self.pad = config.pad
-        self.pad_value = config.pad_token_id
+        self.pad_value = config.pad_value
         self.return_mask = config.return_mask
         self.truncate = config.truncate
         self.truncate_method = config.truncate_method
@@ -111,8 +109,6 @@ class GraphDataset[T_Config](Dataset[CitationGraphDatasetOutput]):
 
         self.category_cols = config.category_cols
         self.sort_cols = config.sort_cols
-        self.offset = config.offset
-        self.period = config.period
         self.top_k = config.top_k
 
         if self.subsample is not None:
@@ -150,8 +146,6 @@ class GraphDataset[T_Config](Dataset[CitationGraphDatasetOutput]):
         if self.t_end is not None and config.time_col:
             lf = lf.filter(pl.col(self.time_col) < self.t_end)
 
-        self.figure_log = plot_target_distribution_polars(lf, self.y[0])
-        self.figure = plot_target_distribution_polars(lf, self.y[0], False)
 
                 # Construct the conditional expression by iterating in reverse
         final_sort_expr = pl.lit(None)
@@ -239,10 +233,11 @@ class GraphDataset[T_Config](Dataset[CitationGraphDatasetOutput]):
         return len(self.df)
 
     def _format_x(self, x: Tensor) -> Tensor:
-        return x.long()
+       return x
 
     def _format_y(self, y: Tensor) -> Tensor:
-        return torch.tensor(y > 30, dtype=torch.float32)
+        #return torch.log(y)
+        return torch.tensor(y > 15, dtype=torch.float32)
 
     @override
     def __getitem__(self, idx: int) -> CitationGraphDatasetOutput:
@@ -255,24 +250,24 @@ class GraphDataset[T_Config](Dataset[CitationGraphDatasetOutput]):
         weight = torch.tensor(float("nan"))
         # X (input)
         row = self.df.row(idx, named=True)
-        x: Tensor = torch.tensor(row["x"], dtype=torch.float32).flatten()
+        x: Tensor = torch.tensor(row["x"], dtype=torch.float32)
         x = self._format_x(x)
 
-        if self.pad and x.size(0) < self.max_len:
-            x = nn.functional.pad(
-                x, (0, self.max_len - x.size(0)), value=self.pad_value
-            )
 
         if self.truncate == True & x.size(0) > self.max_len:
             x = x[: self.max_len]
             # y (target)
 
-        graph_x: Tensor = torch.tensor(row["graph_x"], dtype=torch.float32).flatten()
-        graph_x = self._format_x(x)
-        if self.pad and graph_x.size(0) < self.graph_max_len:
-            graph_x = nn.functional.pad(
-                graph_x, (0, self.graph_max_len - graph_x.size(0)), value=self.pad_value
-            )
+        graph_x: Tensor = torch.tensor(row["graph_x"], dtype=torch.float32)
+        #graph_x = self._format_x(x)
+        if self.pad and graph_x.size(0) < self.top_k:
+            pad_len = self.top_k - graph_x.size(0)
+
+            # Create zero-padding matching feature dimensions, device, and dtype
+            padding = torch.zeros((pad_len, graph_x.size(1)), dtype=graph_x.dtype, device=graph_x.device)
+
+            # Concatenate along dimension 0
+            graph_x = torch.cat([graph_x, padding], dim=0)
 
         if self.truncate == True & graph_x.size(0) > self.graph_max_len:
             graph_x = graph_x[: self.graph_max_len]
@@ -294,8 +289,8 @@ class GraphDataset[T_Config](Dataset[CitationGraphDatasetOutput]):
             ).flatten()
 
         if self.return_mask:
-            mask = (x != self.pad_value).bool()
-            graph_x_mask = (graph_x != self.pad_value).bool()
+            graph_x_mask = torch.zeros((self.top_k, 1))
+            graph_x_mask[:len(row['x'])] = 1
 
         out = CitationGraphDatasetOutput(
             id=id,

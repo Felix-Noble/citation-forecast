@@ -6,6 +6,7 @@ from .transformer_var_reg import TransformerVarianceRegressor
 from .transformerBinaryClass import TransformerBinaryClass
 from .transformerClass import TransformerClass
 from .transformerEmbedClass import TransformerEmbedClass
+from .embed_graph_class import EmbedGraphClass
 
 __all__ = [
     "HR_AHEAD_BINARY",
@@ -16,4 +17,5 @@ __all__ = [
     "TransformerEmbedClass",
     "TransformerGraphClass",
     "TransformerBinaryClass",
+    "EmbedGraphClass",
 ]
