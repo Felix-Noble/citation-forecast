@@ -11,6 +11,7 @@ from .ordinal_cite_graph_dataset import OrdinalCiteGraphDataset
 from .ordinal_dataset import OrdinalDataset
 from .ordinal_graph_dataset import OrdinalGraphDataset
 from .polars_dataset import PolarsDataset
+from .text_token_dataset import TextTokenDataset
 
 __all__ = [
     "BinaryCategoricalDataset",
@@ -25,5 +26,6 @@ __all__ = [
     "OrdinalDataset",
     "OrdinalGraphDataset",
     "PolarsDataset",
+    "TextTokenDataset",
 ]
 # <<< build_helper:auto
