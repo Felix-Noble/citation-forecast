@@ -1,7 +1,6 @@
-from dataclasses import dataclass
 from logging import getLogger
 from pathlib import Path
-from typing import NamedTuple, override
+from typing import ClassVar, override
 
 import matplotlib.pyplot as plt
 import mlflow
@@ -11,7 +10,6 @@ import torch
 from sklearn.metrics import (  # pyright: ignore[reportUnknownVariableType, reportMissingTypeStubs]
     mean_absolute_error,
 )
-
 from utils.logging import setup_logger
 
 from .metric_tracker import MetricTracker
@@ -146,43 +144,43 @@ def histplot(prefix: str, x: np.ndarray):
     return fig
 
 
-class StoreParams(NamedTuple):
-    name: str
-    batch_shape: tuple[int, ...]
-    buffer_size: int
-    buffer_device: torch.device
-    max_store: int
-    n_examples: int
-
-
-@dataclass
-class Store:
-    name: str
-    buffer: torch.Tensor
-    store: list[torch.Tensor]
-    buffer_cursor: torch.Tensor
-    store_cursor: int
-
-
-class MetricTuple(NamedTuple):
-    "Metric Tuple: stores named metric scores / weight values for dataframe concatenations"
-
-    score: float
-    weight: float
-
-
 class HSRegregressionTracker(MetricTracker):
     """
-    Heteroscedastic regression Metrics Tracker:
+    Heteroscedastic regression metrics tracker.
 
-    Stores intermediate outputs on GPU, calcualtes results, displays them
-
-    args:
-        output_shape: shape out output by model
-        output_buffer_size: n. of outputs that will be stored in 'fast' buffer
-        output_max_size: n. of outputs that will be stored before moving to CPU
-
+    Stores predictions, uncertainties (sigma), targets and ids, then computes
+    MAE, WAPE, 3-sigma capture and diagnostic plots.
     """
+
+    store_names: ClassVar[tuple[str, ...]] = (
+        "train_ids",
+        "train_preds",
+        "train_sigma",
+        "train_y",
+        "train_y_orig",
+        "train_loss",
+        "val_ids",
+        "val_preds",
+        "val_sigma",
+        "val_y",
+        "val_y_orig",
+        "val_loss",
+    )
+
+    def __init__(
+        self,
+        *,
+        device: torch.device,
+        dtype: torch.dtype,
+        export: bool = False,
+        export_loc: Path | None = None,
+    ) -> None:
+        super().__init__(
+            device=device,
+            dtype=dtype,
+            export=export,
+            export_loc=export_loc,
+        )
 
     @override
     def _log_plots(
@@ -232,7 +230,12 @@ class HSRegregressionTracker(MetricTracker):
         )
 
     @override
-    def calc_metrics(self, prefix: str, step: int) -> None:
+    def calc_metrics(
+        self,
+        *,
+        prefix: str,
+        step: int,
+    ) -> None:
         preds = self._gather_store(store_name=f"{prefix}_preds")
         sigmas = self._gather_store(store_name=f"{prefix}_sigma")
         y_true = self._gather_store(store_name=f"{prefix}_y")
@@ -244,7 +247,7 @@ class HSRegregressionTracker(MetricTracker):
 
         if preds.size(0) != y_true.size(0):
             logger.error(
-                f"Different n. examples in logits and y_true: logits shape: {logits.shape}, y_true shape:{y_true.shape}"
+                f"Different n. examples in preds and y_true: preds shape: {preds.shape}, y_true shape:{y_true.shape}"
             )
             return
 

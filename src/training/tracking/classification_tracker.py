@@ -1,7 +1,6 @@
-from dataclasses import dataclass
 from logging import getLogger
 from pathlib import Path
-from typing import NamedTuple, override
+from typing import ClassVar, override
 
 import matplotlib.pyplot as plt
 import mlflow
@@ -19,7 +18,6 @@ from sklearn.metrics import (  # pyright: ignore[reportUnknownVariableType, repo
     recall_score,
     roc_auc_score,
 )
-
 from utils.logging import setup_logger
 
 from .metric_tracker import MetricTracker
@@ -29,43 +27,49 @@ logger = getLogger(__name__)
 _ = setup_logger(logger)
 
 
-class StoreParams(NamedTuple):
-    name: str
-    batch_shape: tuple[int, ...]
-    buffer_size: int
-    buffer_device: torch.device
-    max_store: int
-    n_examples: int
-
-
-@dataclass
-class Store:
-    name: str
-    buffer: torch.Tensor
-    store: list[torch.Tensor]
-    buffer_cursor: torch.Tensor
-    store_cursor: int
-
-
-class MetricTuple(NamedTuple):
-    "Metric Tuple: stores named metric scores / weight values for dataframe concatenations"
-
-    score: float
-    weight: float
-
-
 class ClassificationTracker(MetricTracker):
     """
-    Classification Metrics Tracker:
+    Multi-class / binary classification metrics tracker.
 
-    Stores intermediate outputs on GPU, calcualtes results, displays them
-
-    args:
-        output_shape: shape out output by model
-        output_buffer_size: n. of outputs that will be stored in 'fast' buffer
-        output_max_size: n. of outputs that will be stored before moving to CPU
-
+    ``n_out`` controls whether predictions are treated as binary (``n_out == 1``)
+    or multi-class (``n_out > 1``).
     """
+
+    store_names: ClassVar[tuple[str, ...]] = (
+        "train_ids",
+        "train_logits",
+        "train_probs",
+        "train_y",
+        "train_y_orig",
+        "train_loss",
+        "train_preds",
+        "train_sigma",
+        "val_ids",
+        "val_logits",
+        "val_probs",
+        "val_y",
+        "val_y_orig",
+        "val_loss",
+        "val_preds",
+        "val_sigma",
+    )
+
+    def __init__(
+        self,
+        *,
+        device: torch.device,
+        dtype: torch.dtype,
+        n_out: int,
+        export: bool = False,
+        export_loc: Path | None = None,
+    ) -> None:
+        super().__init__(
+            device=device,
+            dtype=dtype,
+            export=export,
+            export_loc=export_loc,
+        )
+        self.n_out = n_out
 
     @override
     def _log_plots(
@@ -154,7 +158,12 @@ class ClassificationTracker(MetricTracker):
             logger.error(str(e))
 
     @override
-    def calc_metrics(self, prefix: str, step: int) -> None:
+    def calc_metrics(
+        self,
+        *,
+        prefix: str,
+        step: int,
+    ) -> None:
         logits = self._gather_store(store_name=f"{prefix}_logits")
         probs = self._gather_store(store_name=f"{prefix}_probs")
         y_true = self._gather_store(store_name=f"{prefix}_y")
@@ -184,7 +193,7 @@ class ClassificationTracker(MetricTracker):
         except Exception as e:
             logger.error(e)
 
-        if self.config.model.model.n_out == 1:
+        if self.n_out == 1:
             # binary case
             preds = torch.zeros_like(probs)
             preds[probs > 0.5] = 1
