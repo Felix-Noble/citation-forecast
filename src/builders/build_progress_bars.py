@@ -1,4 +1,4 @@
-from rich.progress import Progress, TextColumn, BarColumn, TimeElapsedColumn, TimeRemainingColumn
+from rich.progress import BarColumn, Progress, TextColumn, TimeElapsedColumn, TimeRemainingColumn
 
 def build_epoch_progress(disable: bool=False):
     epoch_progress = Progress(
@@ -52,7 +52,9 @@ def build_mem_util_progress(disable: bool=False):
     )
     return mem_util_progress
 
-def build_progress_bars(disable=False) -> tuple[Progress, ...]:
-    return build_epoch_progress(disable), \
-            build_example_progress(disable), \
-            build_eval_example_progress(disable)
+def build_progress_bars(disable: bool = False) -> tuple[Progress, Progress, Progress]:
+    return (
+        build_epoch_progress(disable),
+        build_example_progress(disable),
+        build_eval_example_progress(disable),
+    )

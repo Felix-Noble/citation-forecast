@@ -29,6 +29,7 @@ class CheckpointProcessor(Protocol):
     def load(self, *, ref: CheckpointRef, map_location: torch.device) -> Checkpoint: ...
 
 
+@runtime_checkable
 class ExperimentFileStore(Protocol):
     """Mixin-like protocol for processors that also handle experiment-file
     artifacts (B4/E5/J1)."""

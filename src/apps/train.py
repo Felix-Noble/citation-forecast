@@ -14,7 +14,7 @@ from builders import build_progress_bars
 from config.env import load_env
 from config.loader import load_experiment
 from config.runtime import RunContext
-from training.checkpointing import CheckpointRef
+from training.checkpointing import CheckpointRef, ExperimentFileStore
 from training.engine import Engine
 from utils import get_root_dir
 from utils.logging import setup_logger
@@ -225,7 +225,9 @@ def main(
         assert mlf_run is not None
 
         experiment_file_path = _experiment_file_path(experiment_name)
-        if experiment_file_path.exists():
+        if experiment_file_path.exists() and isinstance(
+            exp.checkpoints, ExperimentFileStore
+        ):
             exp.checkpoints.save_experiment_file(path=experiment_file_path)
 
         model_file = _model_source_file(exp.model)
