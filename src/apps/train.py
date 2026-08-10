@@ -1,35 +1,21 @@
+from __future__ import annotations
+
 import os
 import warnings
-from concurrent.futures import ThreadPoolExecutor
-from contextlib import nullcontext
 from logging import getLogger
 from pathlib import Path
-from typing import Any
 
+
+import mlflow
 import torch
 import typer
-from torch.utils.data import DataLoader, Dataset
 
-import config
-from builders import (
-    build_loss,
-    build_progress_bars,
-    build_train_tracker,
-)
-from config import env
-from data import PortionSampler
-from data.sources import LocalStagedSource
-from training.callbacks import isnan_async
-from training.optimizers.specs import AdamWSpec
-from training.schedulers import WarmupCosineSpec
-from training.strategies import ClassificationStrategy, StrategyConfig
-from training.tracking import (
-    BinaryClassificationTracker,
-    MetricTracker,
-    calc_metrics,
-    log_lrs,
-    log_params,
-)
+from builders import build_progress_bars
+from config.env import load_env
+from config.loader import load_experiment
+from config.runtime import RunContext
+from training.checkpointing import CheckpointRef
+from training.engine import Engine
 from utils import get_root_dir
 from utils.logging import setup_logger
 
@@ -40,22 +26,21 @@ warnings.filterwarnings("ignore")
 app = typer.Typer(pretty_exceptions_enable=False)
 
 
-def _build_dataloader(dataset: Dataset[Any], loader_config: Any) -> DataLoader[Any]:
-    """Build a plain ``torch.utils.data.DataLoader`` from a ``LoaderConfig``."""
-    sampler = None
-    if loader_config.samples is not None:
-        sampler = PortionSampler(dataset, loader_config.samples)
+def _experiment_file_path(name: str) -> Path:
+    return (
+        get_root_dir(markers=("pyproject.toml",))
+        / "src"
+        / "config"
+        / "experiments"
+        / f"{name}.py"
+    )
 
-    return DataLoader(
-        dataset=dataset,
-        batch_size=loader_config.batch_size,
-        num_workers=loader_config.num_workers,
-        prefetch_factor=loader_config.prefetch_factor,
-        persistent_workers=loader_config.persistent_workers,
-        pin_memory=loader_config.pin_memory,
-        shuffle=loader_config.shuffle if sampler is None else False,
-        sampler=sampler,
-        drop_last=loader_config.drop_last,
+
+def _model_source_file(model: torch.nn.Module) -> Path:
+    return (
+        get_root_dir(markers=("pyproject.toml",))
+        / "src"
+        / (f"{model.__module__}".replace(".", os.sep) + ".py")
     )
 
 
@@ -78,7 +63,7 @@ def main(
         "",
         "--compile",
         "-c",
-        help="compile model",
+        help="Compile mode for torch.compile",
     ),
     fullgraph: bool = typer.Option(
         False,
@@ -90,8 +75,8 @@ def main(
         "--load-id",
         help="MLflow run id to load checkpoint from",
     ),
-    load_epoch: int = typer.Option(
-        False,
+    load_epoch: int | None = typer.Option(
+        None,
         "--load-epoch",
         help="Epoch to load checkpoint from",
     ),
@@ -100,10 +85,10 @@ def main(
         "--parent-id",
         help="MLflow run id to set as parent",
     ),
-    start_epoch: int = typer.Option(
-        False,
+    start_epoch: int | None = typer.Option(
+        None,
         "--start-epoch",
-        help="Epoch to load checkpoint from",
+        help="Epoch to start training from",
     ),
     subsample: int | None = typer.Option(
         None,
@@ -119,260 +104,144 @@ def main(
         "--gpu/--no-gpu",
         help="Use GPU as device",
     ),
+    model_only: bool = typer.Option(
+        False,
+        "--model-only",
+        help="Load only model weights on resume (skip optimizer/scheduler)",
+    ),
+    tracking_uri: str | None = typer.Option(
+        None,
+        "--tracking-uri",
+        help="Override MLflow tracking URI",
+    ),
+    raw_loc: Path | None = typer.Option(
+        None,
+        "--raw-loc",
+        help="Override raw data location",
+    ),
+    staged_loc: Path | None = typer.Option(
+        None,
+        "--staged-loc",
+        help="Override staged data location",
+    ),
+    artifact_loc: Path | None = typer.Option(
+        None,
+        "--artifact-loc",
+        help="Override artifact storage location",
+    ),
 ) -> None:
-    "Main Loop"
+    """Train an experiment using dependency-injected configuration."""
     assert not (run_name and run_suffix), (
         "Either 'run-name' or 'run-suffix' must be specified"
     )
-    assert run_name or run_suffix, "One of 'run-name' or 'run-suffix' must be specified"
-    device: torch.device = (
-        torch.device("cuda")
-        if torch.cuda.is_available() and gpu
-        else torch.device("cpu")
+    assert run_name or run_suffix, (
+        "One of 'run-name' or 'run-suffix' must be specified"
     )
-    assert (device == torch.device("cuda")) or not gpu, (
+    assert (load_id and load_epoch is not None) or (
+        load_epoch is None and not load_id
+    ), "load id/epoch only work together"
+
+    device = torch.device(
+        "cuda" if torch.cuda.is_available() and gpu else "cpu"
+    )
+    assert device.type == "cuda" or not gpu, (
         "No GPU available on this device, use --no-gpu option"
     )
-    assert (load_id and load_epoch) or (not load_epoch and not load_id), (
-        "load id/epoch only work together"
+
+    env = load_env(
+        overrides={
+            k: v
+            for k, v in {
+                "tracking_uri": tracking_uri,
+                "raw_loc": raw_loc,
+                "staged_loc": staged_loc,
+                "artifact_loc": artifact_loc,
+            }.items()
+            if v is not None
+        }
     )
 
-    stream = torch.cuda.Stream() if torch.cuda.is_available() else None
-    stream_context = (
-        torch.cuda.stream(stream) if torch.cuda.is_available() else nullcontext()
-    )
-    stream_sync = torch.cuda.synchronize if torch.cuda.is_available() else lambda: None
-
-    model = config.model.clss(
-        config=config.model.model,
+    runtime = RunContext(
         device=device,
-        dtype=config.model.dtype,
+        dtype=torch.float32,
+        compile_mode=compile,
+        fullgraph=fullgraph,
+        subsample=subsample,
     )
-    start_epoch: int = (
-        start_epoch if start_epoch else (load_epoch + 1 if load_epoch else 1)
+
+    root_obj = ctx.find_root().obj
+    experiment_name: str = root_obj["experiment_name"]
+    exp = load_experiment(experiment_name, runtime)
+
+    if runtime.compile_mode:
+        exp.model.compile(
+            mode=runtime.compile_mode, fullgraph=runtime.fullgraph
+        )
+
+    start_epoch_int = (
+        start_epoch
+        if start_epoch is not None
+        else (load_epoch + 1 if load_epoch is not None else 1)
     )
-    TEMP_DIR: Path = Path("./temp/checkpoints") / load_id
-    model_name = config.model.clss.__name__
+
+    model_name = type(exp.model).__name__
     if run_suffix:
-        run_name: str = model_name + "-" + str(run_suffix)
+        run_name = f"{model_name}-{run_suffix}"
     if subsample:
         run_name += "-DRY"
 
     logger.info(
-        f'Run: "{run_name}" (Model: {model_name}) | Device: {device}{" | DRY-RUN" if subsample else ""}'
-    )
-    if compile:
-        model.compile(fullgraph=fullgraph, mode=compile)  # type: ignore
-
-    loss_fn = build_loss(config)
-    metric_tracker = build_train_tracker(
-        dtype=torch.float32,
-        device=device,
+        f'Run: "{run_name}" (Model: {model_name}) | Device: {device}'
+        f'{" | DRY-RUN" if subsample else ""}'
     )
 
-    optimizer_spec = AdamWSpec(
-        lr=config.train.lr,
-        weight_decay=config.train.weight_decay,
-    )
-    scheduler_spec = WarmupCosineSpec(
-        milestones=config.train.lr_milestones,
-        warmup_start_factor=config.train.warmup_start_factor,
-        eta_min=config.train.lr_eta_min,
-        epochs=config.train.epochs,
-    )
-    train_source = LocalStagedSource(
-        path=config.env.STAGED_LOC,
-        name=config.data.train.dataset.loc,
-    )
-    train_dataset = config.data.train.clss(
-        config=config.data.train.dataset,
-        source=train_source,
-    )
-    val_source = LocalStagedSource(
-        path=config.env.STAGED_LOC,
-        name=config.data.test.dataset.loc,
-    )
-    val_dataset = config.data.test.clss(
-        config=config.data.test.dataset,
-        source=val_source,
-    )
+    mlflow.set_tracking_uri(env.tracking_uri)
+    mlflow.set_experiment(exp.experiment_name)
+    logger.info(f"Mlflow connection established at {env.tracking_uri}")
 
-    if config.data.train.loader.samples is None:
-        train_examples_per_epoch = len(train_dataset)
-    else:
-        train_examples_per_epoch = config.data.train.loader.samples
-
-    if config.data.test.loader.samples is None:
-        val_examples_per_epoch = len(val_dataset)
-    else:
-        val_examples_per_epoch = config.data.test.loader.samples
-
-    strategy = ClassificationStrategy(
-        config=StrategyConfig(
-            model=model,
-            loss_fn=loss_fn,
-            tracker=metric_tracker,
-            optimizer_spec=optimizer_spec,
-            scheduler_spec=scheduler_spec,
-            stream=stream_context,
-            device=device,
-            accumulation_steps=config.train.accumulation_steps,
-            examples_per_epoch=train_examples_per_epoch,
+    if load_id and load_epoch is not None:
+        checkpoint = exp.checkpoints.load(
+            ref=CheckpointRef(run_id=load_id, epoch=load_epoch),
+            map_location=device,
         )
-    )
-
-    train_dataloader = _build_dataloader(train_dataset, config.data.train.loader)
-
-    val_dataloader = _build_dataloader(val_dataset, config.data.test.loader)
-
-    (
-        epoch_progress,
-        example_progress,
-        val_example_progress,
-    ) = build_progress_bars(disable=not progress)
-
-
-    import mlflow
-
-    mlflow.set_tracking_uri(env.TRACKING_URI)
-    from mlflow.tracking import MlflowClient
-
-    client: MlflowClient = MlflowClient()
-    mlflow.set_experiment(env.EXPERIMENT)
-    logger.info(f"Mlflow connection established at {env.TRACKING_URI}")
-    if load_id and load_epoch:
-        checkpoint_file = TEMP_DIR / f"epoch-{load_epoch}.pt"
-        if checkpoint_file.exists():
-            logger.info(
-                f"Loading weights file (load_epoch: {load_epoch}) from {TEMP_DIR}"
-            )
-        else:
-            os.makedirs(TEMP_DIR, exist_ok=True)
-            logger.info(f"Fetching weights file for (load_epoch: {load_epoch})")
-            _ = client.download_artifacts(
-                load_id, str(f"epoch-{load_epoch}.pt"), str(TEMP_DIR)
-            )
-        model.load_state_dict(
-            torch.load(
-                str(TEMP_DIR / f"epoch-{load_epoch}.pt"),
-                weights_only=True,
-                map_location=device,
-            ),
-        )
+        exp.model.load_state_dict(checkpoint.model)
         logger.info("Model state loaded")
+        if not model_only:
+            exp.strategy.load_optimizer_state(
+                optimizer=checkpoint.optimizer,
+                scheduler=checkpoint.scheduler,
+            )
+            logger.info("Optimizer and scheduler state restored")
+
+    progress_bars = build_progress_bars(disable=not progress)
+    for pb in progress_bars:
+        pb.start()
+    engine = Engine(
+        experiment=exp, runtime=runtime, progress=progress_bars
+    )
 
     with mlflow.start_run(run_name=run_name, parent_run_id=parent_id):
-        # mlflow.log_artifact("./config")
-
-        mlflow.log_params(
-            {
-                "train.examples": len(train_dataset),
-                "val.examples": len(val_dataset),
-            }
-        )
-        mlflow.log_params(
-            {f"model.{k}": v for k, v in config.model.model.__dict__.items()}
-        )
-        mlflow.log_params({"model.class": model.__module__.split(".")[-1]})
-        mlflow.log_params({f"train.{k}": v for k, v in config.train.__dict__.items()})
-        mlflow.log_params(
-            {
-                f"data.train.dataset.{k}": v
-                for k, v in config.data.train.dataset.__dict__.items()
-            }
-        )
-
-        mlflow.log_params(
-            {"train.dataset.class": train_dataset.__module__.split(".")[-1]}
-        )
-        mlflow.log_params(
-            {
-                f"data.train.loader.{k}": v
-                for k, v in config.data.train.loader.__dict__.items()
-            }
-        )
-        model_file = (
-            get_root_dir()
-            / "src"
-            / (f"{model.__module__}".replace(".", os.sep) + ".py")
-        )
-
-        mlflow.log_artifact(str(model_file))
         mlf_run = mlflow.active_run()
-        # log_params(train_dataset, test_dataset, scheduler, config)
+        assert mlf_run is not None
 
-        epoch_progress.start()
-        example_progress.start()
-        val_example_progress.start()
+        experiment_file_path = _experiment_file_path(experiment_name)
+        if experiment_file_path.exists():
+            exp.checkpoints.save_experiment_file(path=experiment_file_path)
 
-        epochs_done = epoch_progress.add_task("Epochs", total=config.train.epochs)
-        examples_done = example_progress.add_task(
-            "Train Examples", total=train_examples_per_epoch
+        model_file = _model_source_file(exp.model)
+        if model_file.exists():
+            mlflow.log_artifact(str(model_file))
+
+        mlflow.log_params(
+            {
+                "experiment_name": exp.experiment_name,
+                "model.class": model_name,
+                "train.examples": len(exp.train_loader.dataset),
+                "val.examples": len(exp.val_loader.dataset),
+            }
         )
-        val_examples_done = val_example_progress.add_task(
-            "Eval Examples", total=val_examples_per_epoch
-        )
-        for epoch in range(start_epoch, start_epoch + config.train.epochs):
-            strategy.start_epoch(epoch=epoch)
-            log_lrs(strategy.scheduler, epoch)
-            model.train()
 
-            example_progress.reset(
-                examples_done,
-                description="Train examps",
-                total=train_examples_per_epoch,
-            )
-            val_example_progress.reset(
-                examples_done,
-                description="Eval examps",
-                total=val_examples_per_epoch,
-            )
-
-            for batch_i, batch in enumerate(train_dataloader):
-                loss = strategy.training_step(batch)
-
-                #
-                example_progress.update(
-                    examples_done, advance=config.data.train.loader.batch_size
-                )
-
-            if epoch % config.train.checkpoint_interval == 0:
-                save_dir = os.path.join(
-                    env.ARTIFACT_LOC, env.EXPERIMENT, str(mlf_run.info.run_id)
-                )
-                save_path = os.path.join(save_dir, f"epoch-{epoch}.pt")
-                os.makedirs(save_dir, exist_ok=True)
-                checkpoint = model.state_dict()
-                torch.save(checkpoint, save_path)
-                mlflow.log_artifact(save_path)
-                # save model state and run id, load each on restart (pass as option)
-
-            strategy.scheduler_step()
-
-            if epoch % config.train.eval_interval == 0:
-                for batch_i, batch in enumerate(val_dataloader):
-                    _ = strategy.validation_step(batch)
-                    val_example_progress.update(
-                        val_examples_done, advance=config.data.test.loader.batch_size
-                    )
-                _ = metric_tracker.calc_metrics(
-                    prefix="val",
-                    step=epoch,
-                )
-            _ = metric_tracker.calc_metrics(
-                prefix="train",
-                step=epoch,
-            )
-
-            metrics = metric_tracker.report(
-                progress_bar=epoch_progress,
-                epoch=epoch,
-            )
-            mlflow.log_metrics(metrics, step=epoch, synchronous=False)
-
-            epoch_progress.update(epochs_done, advance=1)
-
-            metric_tracker.clear()
+        engine.fit(start_epoch=start_epoch_int, run_id=mlf_run.info.run_id)
 
 
 if __name__ == "__main__":
