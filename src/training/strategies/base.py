@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from collections.abc import AbstractContextManager, Mapping
+from collections.abc import Mapping
 from contextlib import nullcontext
 from typing import Any, Generic, Protocol, TypeVar, cast, runtime_checkable
 
