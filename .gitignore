@@ -12,6 +12,7 @@ setup.py
 *.obj
 
 # Other
+*config.toml
 plans/
 mlruns/
 mlartifacts/
