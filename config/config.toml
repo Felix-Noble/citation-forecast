@@ -1,7 +1,0 @@
-experiment = "graph_embed_class"
-
-[env]
-tracking_uri = "http://127.0.0.1:5000"
-raw_loc      = "/home/fnoble/data/OpenAlex-parquet/"
-staged_loc   = "/home/fnoble/data/"
-artifact_loc = "/home/fnoble/experiment-tracking/artifacts"
