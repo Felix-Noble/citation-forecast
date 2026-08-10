@@ -216,7 +216,11 @@ def main(
 
     progress_bars = build_progress_bars(disable=not progress)
     for pb in progress_bars:
-        pb.start()
+        try:
+            pb.start()
+        except RuntimeError:
+            # build_epoch_progress is already started.
+            pass
     engine = Engine(
         experiment=exp, runtime=runtime, progress=progress_bars
     )
