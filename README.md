@@ -8,15 +8,15 @@ Python, software engineering, and deep learning.
 
 The core training loop and data pre-processing is driven entirely by
 CLI and integrates directly with MLflow to track experiments and compare
-iterations efficiently. I integrated  a custom registry system, allowing clean, string-based access
-to models, loss functions,
-and optimizers directly from configuration files, with all inputs strictly
-validated by Pydantic. 
+iterations efficiently. v1.0 moves to dependency-injected experiment files:
+each experiment is a single self-contained Python module that instantiates its
+own models, datasets, samplers, plain torch DataLoaders, strategy, tracker, and
+checkpoint processor, with all inputs strictly validated by Pydantic. 
 
 # 1. Tech Stack & Key Features
 ## 1.1 Key Features
-* **Modular Trainer Architecture:**
-Decoupled training loops using a Registry (utils) pattern for easy swapping of losses, optimizers, and models.
+* **Modular Experiment Architecture:**
+Self-contained experiment modules under `src/config/experiments/` declare the full object graph for a run; the CLI selects the experiment and delegates the epoch/batch loop to a generic Engine.
 
 * **Production-Ready Inference:** 
 Integrated with Modal for serverless GPU inference and MLflow for experiment tracking.
@@ -205,41 +205,50 @@ Data pre-processing CLI and custom PyTorch Datasets/Loaders forming a flexible E
 
 </details>
 
-# 3. Project Structure  
+# 3. Project Structure
 ```text
 citation-forecast/
 ├── config/
-│   ├── config.py               # general config
-│   └── env.py                  # env variables
+│   └── config.toml             # experiment name + [env] machine settings
+├── plans/                      # implementation plans
 ├── production/
 │   ├── service.py              # modal inference image
-│   └── models/                 # config, architechture, and weights for production models
+│   └── models/                 # config, architecture, and weights for production models
 │       └── examp-model/
 │           ├── model/
-│           │   ├── arch.py     # architechture and config schema
-│           │   └── config.py   # hyperperameter config 
+│           │   ├── arch.py     # architecture and config schema
+│           │   └── config.py   # hyperparameter config
 │           ├── tokeniser/      # tokeniser (transformers)
 │           └── weights/        # model checkpoint (.pt)
 ├── src/
-│   ├── apps/                   # typer CLI argument parsing
-│   ├── builders/               # safety checks, registry access, and instance creations to serve assets into main loops
+│   ├── main.py                 # root Typer app: --experiment/-e selection
+│   ├── apps/                   # typer CLI argument parsing (train, eval, preprocess, describe, engineer)
+│   ├── builders/               # app-side chrome (progress bars)
+│   ├── config/
+│   │   ├── experiments/        # one self-contained experiment module per experiment
+│   │   ├── loader.py           # experiment module resolution/loading
+│   │   ├── runtime.py          # RunContext (device/dtype/compile/subsample)
+│   │   └── env.py              # Env dataclass loaded from config.toml
+│   ├── data/
+│   │   ├── datasets/           # PyTorch datasets
+│   │   ├── formaters/          # per-row value transforms
+│   │   ├── samplers/           # samplers for PyTorch Datasets
+│   │   ├── sources/            # DataSource protocol + LocalStagedSource
+│   │   └── preprocess/         # clean/tokenise and stage dataset selections
+│   ├── models/                 # PyTorch modules with Pydantic config schemas
 │   └── training/
-│       ├── eval/               # evaluation loops
-│       ├── losses/             # loss funcs (registered)
-│       ├── optimizers/         # optimisers (registered)
-│       ├── tracking/           # metric tracking, calculation, and MLflow logging 
+│       ├── engine.py           # owns the epoch/batch loop
+│       ├── strategies/         # train/val step logic + configure_optimizers
+│       ├── optimizers/         # optimizer specs
+│       ├── schedulers.py       # LR scheduler specs
+│       ├── losses/             # loss functions
+│       ├── tracking/           # metric tracking, calculation, and MLflow logging
+│       ├── checkpointing/      # local/MLflow/S3 checkpoint processors
 │       └── callbacks/          # early stopping
-├── models/                     # PyTorch modules with Pydantic config schema's (registered)
-├── data/
-│   ├── datasets/               # PyTorch datasets
-│   │    └── OrdinalDataset.py  # filter/load dataset into memory, formats y as ordinal classes
-│   ├── samplers/               # samplers for PyTorch Datasets
-│   ├──  preprocess/            # clean/tokenise and stage selections of main dataset > sub datasets
-│   └── sample/                 # sample dataset for local testing
 ├── utils/
-│   ├── logging/                # file & console (rich formatted) logging
-│   └── register/               # registry class, allows string access to objects via decorators
-└── app.py                      # CLI entry point (./app.py)
+│   ├── registry.py             # @component marker decorator
+│   └── build_helper.py         # regenerates package __init__.py auto blocks
+└── citef                       # CLI entry point (pyproject.toml script)
 ```
 
 # 4. Quick start
@@ -248,15 +257,31 @@ citation-forecast/
 git clone https://github.com/Felix-Noble/citation-forecast.git
 cd citation-forecast
 # use your preferred env manager here
-``` 
-
-* Run the MLflow tracking server 
-```bash 
-# activate venv containing mlflow, or use uv/pipx
-mlflow server 
 ```
 
-* Start a training run on cpu (model/dataset selection & configuration in config.py)
+* Configure `config/config.toml` with your machine settings:
+```toml
+experiment = "graph_embed_class"
+
+[env]
+tracking_uri = "http://127.0.0.1:5000"
+raw_loc      = "/path/to/raw/OpenAlex-parquet/"
+staged_loc   = "/path/to/staged/data/"
+artifact_loc = "/path/to/experiment-tracking/artifacts"
+```
+
+* Run the MLflow tracking server
 ```bash
-./app.py train -s demo-run --no-gpu
+# activate venv containing mlflow, or use uv/pipx
+mlflow server
+```
+
+* Start a training run on CPU using the experiment selected in `config.toml`:
+```bash
+citef train -s smoke --no-gpu --subsample 512
+```
+
+* Or select an experiment explicitly on the CLI:
+```bash
+citef --experiment graph_embed_class train -s smoke --no-gpu --subsample 512
 ```

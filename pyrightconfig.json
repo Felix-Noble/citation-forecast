@@ -1,0 +1,29 @@
+{
+  "venvPath": "/home/fnoble/.conda/envs",
+  "venv": "NLP",
+
+  "include": ["src"],
+
+  "exclude": [
+    "**/node_modules",
+    "**/__pycache__",
+    "src/experimental",
+    "src/typestubs"
+  ],
+
+  "ignore": ["src/oldstuff"],
+
+  "defineConstant": {
+    "DEBUG": true
+  },
+
+  "typeCheckingMode": "strict",
+  "reportMissingImports": true,
+  "reportMissingTypeStubs": true,
+  "reportUnusedImport": true,
+  "reportUnusedVariable": true,
+  "reportUndefinedVariable": true,
+  "reportAttributeAccessIssue": true,
+  "pythonVersion": "3.13",
+  "pythonPlatform": "Linux"
+}
