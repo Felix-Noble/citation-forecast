@@ -204,7 +204,6 @@ def main(
     )
     model.eval()
     metric_tracker = build_eval_tracker(
-        config=eval_config,
         device=torch.device("cpu"),
         dtype=torch.float32,
     )

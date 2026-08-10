@@ -150,7 +150,6 @@ def main(
     metric_tracker = build_train_tracker(
         dtype=torch.float32,
         device=device,
-        config=config,
     )
 
     scheduler = build_lr_scheduler(optimizer, config)
