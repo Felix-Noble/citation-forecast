@@ -33,13 +33,13 @@ from training.schedulers import WarmupCosineSpec
 from training.strategies import ClassificationStrategy, StrategyConfig
 from training.tracking import BinaryClassificationTracker
 
-experiment_name: str = "Basic-TransformerClass-cited-ge-1"
+experiment_name: str = "Basic-TransformerClass-cited-gr-1"
 
 
 # Sensible defaults for a small binary classifier.
-_SOURCE_NAME = "1920-2000-lowercase-2-tokenized"
-_X_COL = "title abstract_tokens"
-_Y_COL = "cited_by_count"
+_SOURCE_NAME = "all-lowercase-2-subset"
+_X_COLS = ["title_tokens", "abstract_tokens"]
+_Y_COL = ["cited_by_count"]
 _MAX_LEN = 256
 _PAD_TOKEN_ID = 0  # Must match the tokenizer used during preprocessing.
 _BATCH_SIZE = 32
@@ -63,8 +63,8 @@ def build(runtime: RunContext) -> Experiment[TextTokenDatasetOutput]:
 
     base_dataset_kwargs = {
         "loc": _SOURCE_NAME,
-        "x": [_X_COL],
-        "y": [_Y_COL],
+        "x": _X_COLS,
+        "y": _Y_COL,
         "meta_cols": [],
         "filter": filter_expr,
         "weights": None,
