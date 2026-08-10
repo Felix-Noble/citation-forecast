@@ -5,7 +5,7 @@ from .base import DataSource
 
 
 @dataclass(frozen=True, kw_only=True)
-class LocalStagedSource(DataSource):
+class LocalStagedSource:
     """Local filesystem source whose resolved path is ``path / name``.
 
     This preserves the old ``env.STAGED_LOC / config.loc`` layout while making
@@ -17,3 +17,6 @@ class LocalStagedSource(DataSource):
 
     def resolve(self) -> Path:
         return self.path / self.name
+
+
+DataSource.register(LocalStagedSource)
