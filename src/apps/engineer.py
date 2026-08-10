@@ -17,7 +17,6 @@ from rich.progress import (
     TimeRemainingColumn,
 )
 
-import config
 from data.preprocess import clean_step, tokenise_step
 from utils import export_parquet, setup_logger
 

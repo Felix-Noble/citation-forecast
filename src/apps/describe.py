@@ -5,7 +5,6 @@ from typing import NamedTuple
 import polars as pl
 import typer
 
-import config
 from config import env
 from utils.logging import setup_logger
 
@@ -52,7 +51,10 @@ def main(
     if end_time is not None:
         lf = lf.filter(pl.col(time_col) < end_time)
     if filter:
-        lf = lf.filter(config.data.train.dataset.filter)
+        lf = lf.filter(
+            (pl.col("cited_by_count") >= 1)
+            & (pl.col("referenced_works").list.len() >= 5)
+        )
 
     n_buckets = len(buckets)
     for col in describe_cols:
