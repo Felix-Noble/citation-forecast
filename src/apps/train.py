@@ -14,7 +14,8 @@ from builders import build_progress_bars
 from config.env import load_env
 from config.loader import load_experiment
 from config.runtime import RunContext
-from training.checkpointing import CheckpointRef, ExperimentFileStore
+from training.checkpointing import CheckpointRef
+from training.checkpointing.base import ExperimentFileStore
 from training.engine import Engine
 from utils import get_root_dir
 from utils.logging import setup_logger
