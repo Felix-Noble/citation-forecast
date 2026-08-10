@@ -13,8 +13,6 @@ from torch.utils.data import Dataset
 import config
 from builders import (
     build_loss,
-    build_lr_scheduler,
-    build_optimizer,
     build_progress_bars,
     build_train_tracker,
 )
@@ -22,6 +20,9 @@ from config import env
 from data.dataloaders import DataLoader
 from data.sources import LocalStagedSource
 from training.callbacks import isnan_async
+from training.optimizers.specs import AdamWSpec
+from training.schedulers import WarmupCosineSpec
+from training.strategies import ClassificationStrategy, StrategyConfig
 from training.tracking import (
     BinaryClassificationTracker,
     MetricTracker,
@@ -31,8 +32,6 @@ from training.tracking import (
 )
 from utils import get_root_dir
 from utils.logging import setup_logger
-
-from .eval import eval_model
 
 logger = getLogger(__name__)
 _ = setup_logger(logger)
@@ -106,7 +105,6 @@ def main(
         "Either 'run-name' or 'run-suffix' must be specified"
     )
     assert run_name or run_suffix, "One of 'run-name' or 'run-suffix' must be specified"
-    torch.set_float32_matmul_precision(config.cuda.mat_mul_precision)
     device: torch.device = (
         torch.device("cuda")
         if torch.cuda.is_available() and gpu
@@ -141,18 +139,34 @@ def main(
         model.compile(fullgraph=fullgraph, mode=compile)  # type: ignore
 
     loss_fn = build_loss(config)
-    optimizer = build_optimizer(
-        model.parameters(),  # type: ignore
-        lr=config.train.lr,
-        weight_decay=config.train.weight_decay,
-        config=config,
-    )
     metric_tracker = build_train_tracker(
         dtype=torch.float32,
         device=device,
     )
 
-    scheduler = build_lr_scheduler(optimizer, config)
+    optimizer_spec = AdamWSpec(
+        lr=config.train.lr,
+        weight_decay=config.train.weight_decay,
+    )
+    scheduler_spec = WarmupCosineSpec(
+        milestones=config.train.lr_milestones,
+        warmup_start_factor=config.train.warmup_start_factor,
+        eta_min=config.train.lr_eta_min,
+        epochs=config.train.epochs,
+    )
+    strategy = ClassificationStrategy(
+        config=StrategyConfig(
+            model=model,
+            loss_fn=loss_fn,
+            tracker=metric_tracker,
+            optimizer_spec=optimizer_spec,
+            scheduler_spec=scheduler_spec,
+            stream=stream_context,
+            device=device,
+            accumulation_steps=config.train.accumulation_steps,
+            examples_per_epoch=train_examples_per_epoch,
+        )
+    )
 
     train_source = LocalStagedSource(
         path=config.env.STAGED_LOC,
@@ -203,31 +217,7 @@ def main(
         val_example_progress,
     ) = build_progress_bars(disable=not progress)
 
-    trainer_class = config.train.trainer
-    trainer_config = trainer_class.config(
-        model=model,
-        optimizer=optimizer,
-        loss_fn=loss_fn,
-        scheduler=scheduler,
-        tracker=metric_tracker,
-        stream=stream_context,
-        device=device,
-        accumulation_steps=config.train.accumulation_steps,
-        examples_per_epoch=train_examples_per_epoch,
-    )
-    trainer = trainer_class(trainer_config)
 
-    evaluator_class = config.train.evaluator
-    evaluator = evaluator_class(
-        evaluator_class.config(
-            model=model,
-            prefix="val",
-            loss_fn=loss_fn,
-            tracker=metric_tracker,
-            stream=stream_context,
-            device=device,
-        )
-    )
     import mlflow
 
     mlflow.set_tracking_uri(env.TRACKING_URI)
@@ -309,8 +299,8 @@ def main(
             "Eval Examples", total=val_examples_per_epoch
         )
         for epoch in range(start_epoch, start_epoch + config.train.epochs):
-            trainer.start_epoch(epoch)
-            log_lrs(scheduler, epoch)
+            strategy.start_epoch(epoch=epoch)
+            log_lrs(strategy.scheduler, epoch)
             model.train()
 
             example_progress.reset(
@@ -325,7 +315,7 @@ def main(
             )
 
             for batch_i, batch in enumerate(train_dataloader):
-                loss = trainer.step(batch)
+                loss = strategy.training_step(batch)
 
                 #
                 example_progress.update(
@@ -343,11 +333,11 @@ def main(
                 mlflow.log_artifact(save_path)
                 # save model state and run id, load each on restart (pass as option)
 
-            scheduler.step()
+            strategy.scheduler_step()
 
             if epoch % config.train.eval_interval == 0:
                 for batch_i, batch in enumerate(val_dataloader):
-                    _ = evaluator.step(batch)
+                    _ = strategy.validation_step(batch)
                     val_example_progress.update(
                         val_examples_done, advance=config.data.test.loader.batch_size
                     )

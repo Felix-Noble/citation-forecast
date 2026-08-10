@@ -23,7 +23,9 @@ from config import env
 from data import PortionSampler
 from data.dataloaders import DataLoader
 from data.sources import LocalStagedSource
-from eval import eval_model
+from training.optimizers.specs import AdamWSpec
+from training.schedulers import WarmupCosineSpec
+from training.strategies import ClassificationStrategy, StrategyConfig
 from training.tracking import (
     log_lrs,
     log_params,
@@ -210,15 +212,27 @@ def main(
     loss_fn = build_loss(config=eval_config)
     logger.info(f"Model {model.__module__} loaded to {device}")
 
-    evaluator_class = config.train.evaluator
-    evaluator = evaluator_class(
-        evaluator_class.config(
+    optimizer_spec = AdamWSpec(
+        lr=config.train.lr,
+        weight_decay=config.train.weight_decay,
+    )
+    scheduler_spec = WarmupCosineSpec(
+        milestones=config.train.lr_milestones,
+        warmup_start_factor=config.train.warmup_start_factor,
+        eta_min=config.train.lr_eta_min,
+        epochs=config.train.epochs,
+    )
+    strategy = ClassificationStrategy(
+        config=StrategyConfig(
             model=model,
-            prefix="val",
             loss_fn=loss_fn,
             tracker=metric_tracker,
+            optimizer_spec=optimizer_spec,
+            scheduler_spec=scheduler_spec,
             stream=stream_context,
             device=device,
+            accumulation_steps=config.train.accumulation_steps,
+            examples_per_epoch=0,
         )
     )
     current_t_start: datetime = start_date
@@ -270,7 +284,7 @@ def main(
             )
 
             for batch_i, batch in enumerate(test_dataloader):
-                _ = evaluator.step(batch)
+                _ = strategy.validation_step(batch)
                 example_progress_bar.update(
                     example_progress, advance=config.data.test.loader.batch_size
                 )

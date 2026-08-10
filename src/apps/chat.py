@@ -24,7 +24,6 @@ from builders import (
 )
 from data import PortionSampler
 from data.datasets import BinaryCategoricalDataset, OrdinalDataset
-from eval import eval_model
 from training.tracking import (
     BinaryClassificationTracker,
     MetricTracker,

@@ -1,11 +1,8 @@
-from typing import NamedTuple
+# Legacy singleton training hyperparameters.
+# Phase 3 keeps these values so the rewired apps continue to run while the
+# first experiment file (Phase 4) is being authored.  This module is deleted in
+# Phase 7.
 
-import eval as evaluators
-import training.trainers as trainers
-
-# exported config
-trainer = trainers.ClassificationTrainer
-evaluator = evaluators.ClassificationEvaluator
 epochs: int = 8
 accumulation_steps: int = 1  # n batches until optimizer steps
 lr: float = 1e-3
