@@ -20,6 +20,7 @@ from builders import (
 )
 from config import env
 from data.dataloaders import DataLoader
+from data.sources import LocalStagedSource
 from training.callbacks import isnan_async
 from training.tracking import (
     BinaryClassificationTracker,
@@ -154,13 +155,21 @@ def main(
 
     scheduler = build_lr_scheduler(optimizer, config)
 
+    train_source = LocalStagedSource(
+        path=config.env.STAGED_LOC,
+        name=config.data.train.dataset.loc,
+    )
     train_dataset = config.data.train.clss(
         config=config.data.train.dataset,
-        env=config.env,
+        source=train_source,
+    )
+    val_source = LocalStagedSource(
+        path=config.env.STAGED_LOC,
+        name=config.data.test.dataset.loc,
     )
     val_dataset = config.data.test.clss(
         config=config.data.test.dataset,
-        env=config.env,
+        source=val_source,
     )
 
     if config.data.train.loader.samples is None:

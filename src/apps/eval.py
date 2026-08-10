@@ -22,6 +22,7 @@ from builders import (
 from config import env
 from data import PortionSampler
 from data.dataloaders import DataLoader
+from data.sources import LocalStagedSource
 from eval import eval_model
 from training.tracking import (
     log_lrs,
@@ -247,9 +248,13 @@ def main(
                 PREDICTIONS_DIR / f"{window_config.t_start.year}"
             )
 
+            test_source = LocalStagedSource(
+                path=config.env.STAGED_LOC,
+                name=window_config.loc,
+            )
             test_dataset = config.data.test.clss(
                 config=window_config,
-                env=config.env,
+                source=test_source,
             )
 
             test_dataloader = DataLoader(
