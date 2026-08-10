@@ -7,9 +7,9 @@ from torch import Tensor
 
 from data.formaters import CitationGraphFormater, Formater
 from data.sources import DataSource
+from utils import component
 from utils.logging import setup_logger
 
-from ._registry import dataset_registry
 from .citation_graph_dataset import CitationGraphDataset, CitationGraphDatasetConfig
 from .types import CitationGraphDatasetOutput
 
@@ -23,7 +23,7 @@ class OrdinalDatasetConfig(CitationGraphDatasetConfig):
     max: float
 
 
-@dataset_registry
+@component
 class OrdinalCiteGraphDataset(CitationGraphDataset):
     config: type[OrdinalDatasetConfig] = OrdinalDatasetConfig
 

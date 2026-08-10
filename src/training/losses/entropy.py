@@ -1,4 +1,3 @@
-from ._registry import loss_registry
 from torch import Tensor, tensor, log, mean
 from torch.distributions.categorical import Categorical
 

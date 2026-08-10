@@ -7,9 +7,9 @@ from torch import Tensor
 
 from data.formaters import Formater, GraphFormater
 from data.sources import DataSource
+from utils import component
 from utils.logging import setup_logger
 
-from ._registry import dataset_registry
 from .graph_dataset import CitationGraphDatasetConfig, GraphDataset
 from .types import CitationGraphDatasetOutput
 
@@ -21,7 +21,7 @@ class BinaryThresholdDatasetConfig(CitationGraphDatasetConfig):
     theta: float
 
 
-@dataset_registry
+@component
 class BinaryThresholdGraphDataset(GraphDataset):
     config: type[BinaryThresholdDatasetConfig] = BinaryThresholdDatasetConfig
 

@@ -4,6 +4,7 @@ from typing import override
 import torch
 from torch import Tensor
 
+from utils import component
 from utils.logging import setup_logger
 
 from .polars_dataset import Env, PolarsDataset, PolarsDatasetConfig
@@ -15,6 +16,7 @@ _ = setup_logger(logger)
 class LogRegressDatasetConfig(PolarsDatasetConfig):
     pass
 
+@component
 class LogRegressDataset(PolarsDataset):
     "Binary dataset with custom inclusive threshold (theta) for boundary between 0/1 class"
 

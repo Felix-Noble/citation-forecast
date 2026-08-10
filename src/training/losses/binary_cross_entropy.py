@@ -5,7 +5,8 @@ from torch import Tensor
 from torch.nn.functional import binary_cross_entropy
 from torch.nn import BCELoss
 
-from ._registry import loss_registry
+from utils import component
+
 from .loss_protocol import LossFn
 
 
@@ -18,7 +19,7 @@ class BCEOutput(Protocol):
     probs: Tensor
 
 
-@loss_registry("BinaryCrossEntropyLoss")
+@component
 class BinaryCrossEntropyLoss(BCELoss, LossFn[BCEBatch, BCEOutput]):
     def __init__(self, config):
         super().__init__()

@@ -2,12 +2,11 @@ import torch
 from torch import Tensor, cuda, tensor
 from torch.distributions.normal import Normal
 
-from ._registry import loss_registry
 from .entropy import norm_entropy_loss
 from .wasserstein_funcs import wasserstein_loss
 
 
-@loss_registry("WassersteinEntropyLoss")
+@component
 class WassersteinEntropyLoss:
     def __init__(
         self,

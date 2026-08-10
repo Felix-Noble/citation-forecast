@@ -1,4 +1,3 @@
-from ._registry import loss_registry
 import torch
 from torch import Tensor
 

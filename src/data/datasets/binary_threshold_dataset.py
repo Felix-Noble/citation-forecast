@@ -4,6 +4,7 @@ from typing import override
 import torch
 from torch import Tensor
 
+from utils import component
 from utils.logging import setup_logger
 
 from .polars_dataset import Env, PolarsDataset, PolarsDatasetConfig
@@ -16,6 +17,7 @@ class BinaryThresholdDatasetConfig(PolarsDatasetConfig):
     theta: float
 
 
+@component
 class BinaryThresholdDataset(PolarsDataset):
     "Binary dataset with custom inclusive threshold (theta) for boundary between 0/1 class"
 

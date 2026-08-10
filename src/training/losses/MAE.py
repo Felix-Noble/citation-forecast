@@ -4,7 +4,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch import Tensor, log, mean
 
-from ._registry import loss_registry
+from utils import component
 
 
 class Output(Protocol):
@@ -16,7 +16,7 @@ class Batch(Protocol):
     y: Tensor
 
 
-@loss_registry
+@component
 class MAE(nn.L1Loss):
     def __init__(self, config):
         super().__init__()

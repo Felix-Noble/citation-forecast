@@ -7,16 +7,16 @@ import torch.nn as nn
 from torch import Tensor
 from torch.utils.data import Dataset
 
+from utils import component
 from utils.logging import setup_logger
 
-from ._registry import dataset_registry
 from .polars_dataset import PolarsDataset
 
 logger = getLogger(__name__)
 _ = setup_logger(logger)
 
 
-@dataset_registry
+@component
 class BinaryCategoricalDataset(PolarsDataset):
     @override
     def _format_y(self, y: Tensor) -> Tensor:

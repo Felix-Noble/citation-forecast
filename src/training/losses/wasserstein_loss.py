@@ -4,7 +4,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch import Tensor, log, mean
 
-from ._registry import loss_registry
+from utils import component
+
 from .wasserstein_funcs import wasserstein_loss
 
 
@@ -16,7 +17,7 @@ class Batch(Protocol):
     target_indicies: Tensor
 
 
-@loss_registry("WassersteinLoss")
+@component
 class WassersteinLoss(nn.Module):
     def __init__(self, config):
         super().__init__()

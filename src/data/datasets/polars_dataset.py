@@ -14,6 +14,7 @@ from pydantic import BaseModel, ConfigDict
 from torch import Tensor
 from torch.utils.data import Dataset
 
+from utils import component
 from utils.logging import setup_logger
 
 logger = getLogger(__name__)
@@ -90,6 +91,7 @@ def plot_target_distribution_polars(lf: pl.LazyFrame, y_true_col: str, log_scale
     return fig
 
 
+@component
 class PolarsDataset[T_Config](Dataset[PolarsDatasetOutput]):
     config = PolarsDatasetConfig
 

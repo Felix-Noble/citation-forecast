@@ -13,6 +13,7 @@ from torch.utils.data import Dataset
 
 from data.formaters import CitationGraphFormater, Formater
 from data.sources import DataSource
+from utils import component
 from utils.logging import setup_logger
 
 from .polars_dataset import plot_target_distribution_polars
@@ -56,6 +57,7 @@ class CitationGraphDatasetConfig(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
 
+@component
 class CitationGraphDataset[T_Config](Dataset[CitationGraphDatasetOutput]):
     config = CitationGraphDatasetConfig
 

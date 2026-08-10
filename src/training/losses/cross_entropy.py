@@ -5,7 +5,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch import Tensor
 
-from ._registry import loss_registry
+from utils import component
 
 
 class CEBatch(Protocol):
@@ -17,7 +17,7 @@ class CEOutput(Protocol):
     logits: Tensor
 
 
-@loss_registry("CrossEntropyLoss")
+@component
 class CrossEntropyLoss(nn.CrossEntropyLoss):
     def __init__(self, config):
         super().__init__()

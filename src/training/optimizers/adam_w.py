@@ -1,6 +1,7 @@
-from ._registry import optim_registry
+from utils import component
 import torch
 
-@optim_registry('AdamW')
+
+@component
 class RegisteredAdamW(torch.optim.AdamW):
     pass

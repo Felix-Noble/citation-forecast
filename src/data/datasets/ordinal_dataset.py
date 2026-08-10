@@ -7,9 +7,9 @@ import torch.nn as nn
 from torch import Tensor
 from torch.utils.data import Dataset
 
+from utils import component
 from utils.logging import setup_logger
 
-from ._registry import dataset_registry
 from .polars_dataset import PolarsDataset, PolarsDatasetConfig
 
 logger = getLogger(__name__)
@@ -31,7 +31,7 @@ class OrdinalDatasetOutput(NamedTuple):
     weight: Tensor
 
 
-@dataset_registry
+@component
 class OrdinalDataset(PolarsDataset):
     config: type[OrdinalDatasetConfig] = OrdinalDatasetConfig
 

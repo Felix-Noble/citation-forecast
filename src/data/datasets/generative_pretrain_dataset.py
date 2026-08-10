@@ -10,9 +10,9 @@ import torch.nn as nn
 from torch import Tensor, tensor
 from torch.utils.data import Dataset
 
+from utils import component
 from utils.logging import setup_logger
 
-from ._registry import dataset_registry
 from .polars_dataset import PolarsDataset
 
 logger = getLogger(__name__)
@@ -28,7 +28,7 @@ class Output:
     mask: Tensor = tensor(float("nan"))
 
 
-@dataset_registry
+@component
 class GenerativePretrainDataset(PolarsDataset):
     "Splits token column into two segments, input and predictions (non causal pre-training split)"
 

@@ -1,85 +1,44 @@
-from typing import Callable
+"""Marker decorator for build-helper-discoverable components.
 
-class Registry:
-    """ Registry class
-        Stores {key, callable} pairs through decoration
+The old runtime ``Registry`` class has been removed (plan 1.0 v3 phase 7).
+``@component`` only tags a class as exportable; ``utils.build_helper`` scans
+packages for the marker and regenerates their ``__init__.py`` import blocks.
+"""
+
+from collections.abc import Callable
+from typing import TypeVar, overload
+
+T = TypeVar("T", bound=type)
+
+
+@overload
+def component(cls: T) -> T: ...
+
+
+@overload
+def component(group: str | None = None) -> Callable[[T], T]: ...
+
+
+def component(
+    cls_or_group: T | str | None = None,
+) -> T | Callable[[T], T]:
+    """Tag a class as a build-helper-discoverable component.
+
+    Used without arguments on the class itself, or with an optional group name.
+    Sets ``cls.__component_group__`` for downstream tooling.
     """
-    def __init__(self):
-        self._map: dict[str, Callable] = {}
-    
-    def __getitem__(self, key) -> Callable:
-        """ Access to values via key indexing """
-        return self._map[key]
 
-    def get(self, key) -> Callable:
-        """ Alias for __get__item 
-            Consistency with dict class """
-        return self.__getitem__(key)
-    
-    @property
-    def keys(self) -> list[str]:
-        """ List available keys
-            Allows easier membership checking"""
-        return list(self._map.keys()) 
-    
-    def _register(
-            self, 
-            name: str,
-            obj: Callable,
-                  ) -> None:
-        """ Adds key to map
-            Checks if key already in map """
+    if isinstance(cls_or_group, type):
+        cls = cls_or_group
+        cls.__component_group__ = cls.__module__.split(".")[-2]
+        return cls
 
-        assert name not in self.keys, f'{name} already in registry'
-        self._map.update({name: obj})
+    group = cls_or_group
 
-    def register(self, obj_or_name: Callable | str) -> Callable:
-        """ Decorator for _register
-            Allows both argument and no-argument decoration """
+    def decorator(cls: T) -> T:
+        cls.__component_group__ = (
+            group if group is not None else cls.__module__.split(".")[-2]
+        )
+        return cls
 
-        if callable(obj_or_name):
-            self._register(obj_or_name.__name__.lower(), obj_or_name)
-            return obj_or_name
-
-        elif isinstance(obj_or_name, str):
-            def _wrapper(obj):
-                self._register(obj_or_name, obj)
-                return obj
-            return _wrapper
-
-        else:
-            raise TypeError(f'obj_or_name must be str or Callable, got {obj_or_name} which is type {type(obj_or_name)}')
-
-    def __call__(self, obj_or_name: str | Callable) -> Callable:
-        """ Instance callable alias for register """
-        return self.register(obj_or_name) 
-
-if __name__ == '__main__':
-    registry = Registry()
-
-    @registry
-    class Test1:
-        test = 1
-        def __call__(self):
-            return 'sucess 1'
-
-    @registry.register
-    class Test2:
-        test=2
-        def __call__(self):
-            return 'sucess 2'
-
-    @registry.register('new_name')
-    class TestName:
-        def __call__(self):
-            return 'sucess 3'
-
-    print(registry._map)
-    print(registry['test1'])
-    print(registry['test1']()())
-    print(registry['test2'])
-    print(registry['test2']()())
-    print(registry['new_name'])
-    print(registry['new_name']()())
-    
-
+    return decorator
