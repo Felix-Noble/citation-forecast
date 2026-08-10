@@ -260,12 +260,14 @@ citation-forecast/
 ```
 
 # 4. Quick start
-* Clone the repository and setup your environment.
+* Clone the repository and install the package. The `citef` command is created automatically from the `pyproject.toml` console-script entry point.
 ```bash
 git clone https://github.com/Felix-Noble/citation-forecast.git
 cd citation-forecast
-# use your preferred env manager here
+pip install .
 ```
+
+> For development, install in editable mode with `pip install -e .`.
 
 * Configure `config/config.toml` with your machine settings:
 ```toml
