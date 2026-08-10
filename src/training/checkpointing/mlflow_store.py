@@ -1,4 +1,5 @@
 import os
+import shutil
 import tempfile
 from dataclasses import dataclass, field
 from logging import getLogger
@@ -100,7 +101,10 @@ class MlflowCheckpointProcessor(CheckpointProcessor, ExperimentFileStore):
         )
 
     def save_experiment_file(self, *, path: Path) -> None:
-        mlflow.log_artifact(str(path), artifact_path="", run_id=None)
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            standardized_path = Path(tmp_dir) / self._experiment_file_artifact_path()
+            shutil.copy2(str(path), str(standardized_path))
+            mlflow.log_artifact(str(standardized_path), artifact_path="", run_id=None)
 
     def experiment_file_exists(self, *, run_id: str) -> bool:
         artifacts = self._client.list_artifacts(run_id, path="")
