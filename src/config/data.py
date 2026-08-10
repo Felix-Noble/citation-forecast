@@ -1,11 +1,30 @@
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import date
 
 import polars as pl
 import torch
 
 from data import datasets as dd
-from data.dataloaders import DataLoaderConfig
+
+
+@dataclass(kw_only=True)
+class LoaderConfig:
+    """Plain holder for DataLoader construction params.
+
+    Replaces the deleted ``data.dataloaders.DataLoaderConfig`` (J7).  Plain
+    ``torch.utils.data.DataLoader`` instances are constructed directly from
+    these values in the apps / experiment files.
+    """
+
+    batch_size: int
+    num_workers: int
+    prefetch_factor: int | None
+    persistent_workers: bool
+    pin_memory: bool
+    shuffle: bool
+    samples: int | None
+    drop_last: bool
+
 
 _dataset = dd.GraphDataset
 _train_loc = "1920-2000-lowercase-2-embedded"
@@ -96,7 +115,7 @@ class Train:
         graph_max_len=_graph_max_len,
         max_mem_rows=_max_mem_rows,
     )
-    loader = DataLoaderConfig(
+    loader = LoaderConfig(
         batch_size=_train_batch_size,
         num_workers=_num_workers,
         prefetch_factor=_prefetch_factor,
@@ -149,7 +168,7 @@ class Test:
         graph_max_len=_graph_max_len,
         max_mem_rows=_max_mem_rows,
     )
-    loader = DataLoaderConfig(
+    loader = LoaderConfig(
         batch_size=_test_batch_size,
         num_workers=_num_workers,
         prefetch_factor=_prefetch_factor,

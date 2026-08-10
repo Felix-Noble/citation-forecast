@@ -10,7 +10,9 @@ from logging import getLogger
 from pathlib import Path
 from typing import NamedTuple
 
+import torch
 import typer
+from torch.utils.data import DataLoader
 
 import config
 from builders import (
@@ -21,7 +23,6 @@ from builders import (
 )
 from config import env
 from data import PortionSampler
-from data.dataloaders import DataLoader
 from data.sources import LocalStagedSource
 from training.optimizers.specs import AdamWSpec
 from training.schedulers import WarmupCosineSpec
@@ -43,6 +44,25 @@ logger = getLogger(__name__)
 _ = setup_logger(logger)
 
 app = typer.Typer(pretty_exceptions_enable=False)
+
+
+def _build_dataloader(dataset: torch.utils.data.Dataset[Any], loader_config: Any) -> DataLoader[Any]:
+    """Build a plain ``torch.utils.data.DataLoader`` from a ``LoaderConfig``."""
+    sampler = None
+    if loader_config.samples is not None:
+        sampler = PortionSampler(dataset, loader_config.samples)
+
+    return DataLoader(
+        dataset=dataset,
+        batch_size=loader_config.batch_size,
+        num_workers=loader_config.num_workers,
+        prefetch_factor=loader_config.prefetch_factor,
+        persistent_workers=loader_config.persistent_workers,
+        pin_memory=loader_config.pin_memory,
+        shuffle=loader_config.shuffle if sampler is None else False,
+        sampler=sampler,
+        drop_last=loader_config.drop_last,
+    )
 
 
 @app.callback(invoke_without_command=True)
@@ -129,8 +149,6 @@ def main(
     warnings.filterwarnings("ignore")
 
     ## Initialise PyTorch
-    import torch
-
     device: torch.device = (
         torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
     )
@@ -270,17 +288,14 @@ def main(
                 source=test_source,
             )
 
-            test_dataloader = DataLoader(
-                dataset=test_dataset,
-                config=config.data.test.loader,
-            )
+            test_dataloader = _build_dataloader(test_dataset, config.data.test.loader)
 
             example_progress_bar.start()
             example_progress = example_progress_bar.add_task(
                 "Examples",
-                total=len(test_dataset)
-                if config.data.test.loader.samples is None
-                else config.data.test.loader.samples,
+                total=len(test_dataloader.sampler)
+                if test_dataloader.sampler is not None
+                else len(test_dataset),
             )
 
             for batch_i, batch in enumerate(test_dataloader):
@@ -306,7 +321,11 @@ def main(
             mlflow.log_metric("examples", len(test_dataset), step=current_t_start.year)
             metric_tracker.clear()
             example_progress_bar.reset(
-                example_progress, description="Examples ", total=len(test_dataset)
+                example_progress,
+                description="Examples ",
+                total=len(test_dataloader.sampler)
+                if test_dataloader.sampler is not None
+                else len(test_dataset),
             )
 
             current_t_start = current_t_end

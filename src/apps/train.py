@@ -8,7 +8,7 @@ from typing import Any
 
 import torch
 import typer
-from torch.utils.data import Dataset
+from torch.utils.data import DataLoader, Dataset
 
 import config
 from builders import (
@@ -17,7 +17,7 @@ from builders import (
     build_train_tracker,
 )
 from config import env
-from data.dataloaders import DataLoader
+from data import PortionSampler
 from data.sources import LocalStagedSource
 from training.callbacks import isnan_async
 from training.optimizers.specs import AdamWSpec
@@ -40,8 +40,28 @@ warnings.filterwarnings("ignore")
 app = typer.Typer(pretty_exceptions_enable=False)
 
 
+def _build_dataloader(dataset: Dataset[Any], loader_config: Any) -> DataLoader[Any]:
+    """Build a plain ``torch.utils.data.DataLoader`` from a ``LoaderConfig``."""
+    sampler = None
+    if loader_config.samples is not None:
+        sampler = PortionSampler(dataset, loader_config.samples)
+
+    return DataLoader(
+        dataset=dataset,
+        batch_size=loader_config.batch_size,
+        num_workers=loader_config.num_workers,
+        prefetch_factor=loader_config.prefetch_factor,
+        persistent_workers=loader_config.persistent_workers,
+        pin_memory=loader_config.pin_memory,
+        shuffle=loader_config.shuffle if sampler is None else False,
+        sampler=sampler,
+        drop_last=loader_config.drop_last,
+    )
+
+
 @app.callback(invoke_without_command=True)
 def main(
+    ctx: typer.Context,
     run_name: str = typer.Option(
         "",
         "--name",
@@ -117,6 +137,12 @@ def main(
         "load id/epoch only work together"
     )
 
+    stream = torch.cuda.Stream() if torch.cuda.is_available() else None
+    stream_context = (
+        torch.cuda.stream(stream) if torch.cuda.is_available() else nullcontext()
+    )
+    stream_sync = torch.cuda.synchronize if torch.cuda.is_available() else lambda: None
+
     model = config.model.clss(
         config=config.model.model,
         device=device,
@@ -154,20 +180,6 @@ def main(
         eta_min=config.train.lr_eta_min,
         epochs=config.train.epochs,
     )
-    strategy = ClassificationStrategy(
-        config=StrategyConfig(
-            model=model,
-            loss_fn=loss_fn,
-            tracker=metric_tracker,
-            optimizer_spec=optimizer_spec,
-            scheduler_spec=scheduler_spec,
-            stream=stream_context,
-            device=device,
-            accumulation_steps=config.train.accumulation_steps,
-            examples_per_epoch=train_examples_per_epoch,
-        )
-    )
-
     train_source = LocalStagedSource(
         path=config.env.STAGED_LOC,
         name=config.data.train.dataset.loc,
@@ -195,21 +207,23 @@ def main(
     else:
         val_examples_per_epoch = config.data.test.loader.samples
 
-    train_dataloader = DataLoader(
-        dataset=train_dataset,
-        config=config.data.train.loader,
+    strategy = ClassificationStrategy(
+        config=StrategyConfig(
+            model=model,
+            loss_fn=loss_fn,
+            tracker=metric_tracker,
+            optimizer_spec=optimizer_spec,
+            scheduler_spec=scheduler_spec,
+            stream=stream_context,
+            device=device,
+            accumulation_steps=config.train.accumulation_steps,
+            examples_per_epoch=train_examples_per_epoch,
+        )
     )
 
-    val_dataloader = DataLoader(
-        dataset=val_dataset,
-        config=config.data.test.loader,
-    )
+    train_dataloader = _build_dataloader(train_dataset, config.data.train.loader)
 
-    stream = torch.cuda.Stream() if torch.cuda.is_available() else None
-    stream_context = (
-        torch.cuda.stream(stream) if torch.cuda.is_available() else nullcontext()
-    )
-    stream_sync = torch.cuda.synchronize if torch.cuda.is_available() else lambda: None
+    val_dataloader = _build_dataloader(val_dataset, config.data.test.loader)
 
     (
         epoch_progress,
