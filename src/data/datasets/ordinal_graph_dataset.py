@@ -1,44 +1,51 @@
+from collections.abc import Mapping
 from logging import getLogger
-from pathlib import Path
-from typing import NamedTuple, override
+from typing import Any, override
 
 import torch
-import torch.nn as nn
 from torch import Tensor
-from torch.utils.data import Dataset
 
+from data.formaters import Formater, GraphFormater
+from data.sources import DataSource
 from utils.logging import setup_logger
 
 from ._registry import dataset_registry
-from .graph_dataset import GraphDataset, GraphDatasetConfig
+from .graph_dataset import CitationGraphDatasetConfig, GraphDataset
+from .types import CitationGraphDatasetOutput
 
 logger = getLogger(__name__)
 _ = setup_logger(logger)
 
 
-class OrdinalDatasetConfig(GraphDatasetConfig):
+class OrdinalDatasetConfig(CitationGraphDatasetConfig):
     boundaries: Tensor
-
-
-class OrdinalDatasetOutput(NamedTuple):
-    id: Tensor
-    x: Tensor
-    y: Tensor
-    y_orig: Tensor
-    mask: Tensor
-    weight: Tensor
 
 
 @dataset_registry
 class OrdinalGraphDataset(GraphDataset):
     config: type[OrdinalDatasetConfig] = OrdinalDatasetConfig
 
-    def __init__(self, config: OrdinalDatasetConfig, env):
-        super().__init__(config, env)
+    def __init__(
+        self,
+        *,
+        config: OrdinalDatasetConfig,
+        source: DataSource,
+        formater: Formater[Mapping[str, Any], CitationGraphDatasetOutput] | None = None,
+    ):
+        if formater is None:
+            formater = GraphFormater(
+                max_len=config.max_len,
+                graph_max_len=config.graph_max_len,
+                top_k=config.top_k,
+                pad=config.pad,
+                truncate=config.truncate,
+                truncate_method=config.truncate_method,
+                return_mask=config.return_mask,
+                return_id=config.return_id,
+                weights=config.weights,
+                format_y=lambda y: torch.bucketize(
+                    y, config.boundaries, right=True, out_int32=True
+                ).long(),
+            )
+        super().__init__(config=config, source=source, formater=formater)
         self.boundaries = config.boundaries
-
-    @override
-    def _format_y(self, y: Tensor) -> Tensor:
-        ordinal = torch.bucketize(y, self.boundaries, right=True, out_int32=True)
-        # logger.debug(print("log", log, "ord", ordinal, "\n", "bound", self.boundaries)
-        return ordinal.long()

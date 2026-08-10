@@ -1,22 +1,22 @@
 import os
 import shutil
-from datetime import date, timedelta
+from collections.abc import Mapping
+from datetime import date
 from logging import getLogger
 from pathlib import Path
-from typing import NamedTuple, Protocol, override
+from typing import Any, override
 
-import matplotlib.pyplot as plt
 import polars as pl
-import seaborn as sns
-import torch
-import torch.nn as nn
 from pydantic import BaseModel, ConfigDict
 from torch import Tensor
 from torch.utils.data import Dataset
 
+from data.formaters import CitationGraphFormater, Formater
+from data.sources import DataSource
 from utils.logging import setup_logger
 
 from .polars_dataset import plot_target_distribution_polars
+from .types import CitationGraphDatasetOutput
 
 logger = getLogger(__name__)
 _ = setup_logger(logger)
@@ -56,27 +56,15 @@ class CitationGraphDatasetConfig(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
 
-class Env(Protocol):
-    STAGED_LOC: Path
-
-
-class CitationGraphDatasetOutput(NamedTuple):
-    id: Tensor
-    x: Tensor
-    graph_x: Tensor
-    y: Tensor
-    weight: Tensor
-    mask: Tensor
-    graph_x_mask: Tensor
-
-
 class CitationGraphDataset[T_Config](Dataset[CitationGraphDatasetOutput]):
     config = CitationGraphDatasetConfig
 
     def __init__(
         self,
+        *,
         config: CitationGraphDatasetConfig,
-        env: Env,
+        source: DataSource,
+        formater: Formater[Mapping[str, Any], CitationGraphDatasetOutput] | None = None,
     ):
         super().__init__()
 
@@ -86,7 +74,19 @@ class CitationGraphDataset[T_Config](Dataset[CitationGraphDatasetOutput]):
         assert not (config.shuffle and config.sample is not None), (
             "Shuffle and Sample cannot both be used"
         )
-        self.data_path = env.STAGED_LOC / config.loc
+        self.config = config
+        self.formater = formater or CitationGraphFormater(
+            max_len=config.max_len,
+            graph_max_len=config.graph_max_len,
+            pad_token_id=config.pad_token_id,
+            pad=config.pad,
+            truncate=config.truncate,
+            truncate_method=config.truncate_method,
+            return_mask=config.return_mask,
+            return_id=config.return_id,
+            weights=config.weights,
+        )
+        self.data_path = source.resolve()
         self.meta_cols = config.meta_cols
         self.filter = config.filter
         self.t_start = config.t_start
@@ -231,72 +231,7 @@ class CitationGraphDataset[T_Config](Dataset[CitationGraphDatasetOutput]):
     def __len__(self) -> int:
         return len(self.df)
 
-    def _format_x(self, x: Tensor) -> Tensor:
-        return x.long()
-
-    def _format_y(self, y: Tensor) -> Tensor:
-        return y
-
     @override
     def __getitem__(self, idx: int) -> CitationGraphDatasetOutput:
-        id = torch.tensor(float("nan"))
-        x = torch.tensor(float("nan"))
-        graph_x = torch.tensor(float("nan"))
-        y = torch.tensor(float("nan"))
-        mask = torch.tensor(float("nan"))
-        graph_x_mask = torch.tensor(float("nan"))
-        weight = torch.tensor(float("nan"))
-        # X (input)
         row = self.df.row(idx, named=True)
-        x: Tensor = torch.tensor(row["x"], dtype=torch.float32).flatten()
-        x = self._format_x(x)
-
-        if self.pad and x.size(0) < self.max_len:
-            x = nn.functional.pad(
-                x, (0, self.max_len - x.size(0)), value=self.pad_value
-            )
-
-        if self.truncate == True & x.size(0) > self.max_len:
-            x = x[: self.max_len]
-            # y (target)
-
-        graph_x: Tensor = torch.tensor(row["graph_x"], dtype=torch.float32).flatten()
-        graph_x = self._format_x(x)
-        if self.pad and graph_x.size(0) < self.graph_max_len:
-            graph_x = nn.functional.pad(
-                graph_x, (0, self.graph_max_len - graph_x.size(0)), value=self.pad_value
-            )
-
-        if self.truncate == True & graph_x.size(0) > self.graph_max_len:
-            graph_x = graph_x[: self.graph_max_len]
-            # y (target)
-        y = torch.tensor(row["y"], dtype=torch.float32).flatten()
-        y = self._format_y(y)
-
-        # id (tracking)
-        if self.return_id:
-            id = row["id"]
-
-        # weights (per target class)
-        if self.weights is not None:
-            weight: Tensor = torch.tensor(
-                [
-                    torch.tensor(self.weights[target.long()], dtype=torch.float32)
-                    for target in torch.atleast_1d(y)
-                ]
-            ).flatten()
-
-        if self.return_mask:
-            mask = (x != self.pad_value).bool()
-            graph_x_mask = (graph_x != self.pad_value).bool()
-
-        out = CitationGraphDatasetOutput(
-            id=id,
-            x=x,
-            graph_x=graph_x,
-            y=y,
-            mask=mask,
-            graph_x_mask=graph_x_mask,
-            weight=weight,
-        )
-        return out
+        return self.formater(row)
