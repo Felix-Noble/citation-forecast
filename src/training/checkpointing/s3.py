@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Never
+import torch
 
 from .base import Checkpoint, CheckpointProcessor, CheckpointRef
 
