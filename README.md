@@ -161,47 +161,55 @@ Data pre-processing CLI and custom PyTorch Datasets/Loaders forming a flexible E
 > - New lowercase clean method for string columns
 > 
 > </details>
-
-</details>
-
-## v0.6
-<details>
-<summary><b>v0.6.0 Model Eval Metric export for visualisation</b></summary>
-
-- Dataset outputs dataclass for resilient batch access to optional fields with dot operator access
-- Associate model outputs with input row id to categorise and measure correlation of metrics
-- Structured JSON metric exports for modularised records
-
-</details>
-
-## v0.7
-<details>
-<summary><b>v0.7.0 CLI &amp Config Consolidation</b></summary>
-
-- Add config/env value overrides to train app
-- Move code-as-config module from root to src, allow config value overrides from CLI via option flags
-- Refactor train (main) loop into /apps
-- Create metric tracker base class for tracking logic, overide metric calculation in children 
-- Seperate train/data/env configs into distinct files
-- Add dedicated loss/optimisation config for lr schedule milestones etc.
-
-</details>
-
-## v1.0
-<details>
-<summary><b>v1.0.0 Full experiment suite (Planned)</b></summary>
-
-- Refactor src module imports as relative to /src, standardise cli access via pyproject.toml build parameters
-- MLflow run management with automatic name creation, CLI driven checkpoint loading with MLflow child run assignment 
-- Automated Hyper parameter search logic, with MLflow parent/child assignment
+>
+> ## v0.6
+> <details>
+> <summary><b>v0.6.0 Model Eval Metric export for visualisation</b></summary>
+>
+> - Dataset outputs dataclass for resilient batch access to optional fields with dot operator access
+> - Associate model outputs with input row id to categorise and measure correlation of metrics
+> - Structured JSON metric exports for modularised records
+>
+> </details>
+>
+> ## v0.7
+> <details>
+> <summary><b>v0.7.0 CLI &amp Config Consolidation</b></summary>
+>
+> - Add config/env value overrides to train app
+> - Move code-as-config module from root to src, allow config value overrides from CLI via option flags
+> - Refactor train (main) loop into /apps
+> - Create metric tracker base class for tracking logic, overide metric calculation in children 
+> - Seperate train/data/env configs into distinct files
+> - Add dedicated loss/optimisation config for lr schedule milestones etc.
+>
+> </details>
+>
+> ## v1.0
+> <details>
+> <summary><b>v1.0.0 Dependency-injected experiment configs</b></summary>
+>
+> - One self-contained experiment module per experiment under `src/config/experiments/` declares the full object graph
+> - Generic `Experiment[T_Batch]` dataclass holds model, strategy, tracker, plain torch DataLoaders, and checkpoint processor
+> - `Engine` owns the epoch/batch loop; `Strategy` implements `training_step`, `validation_step`, and `configure_optimizers`
+> - Typed optimizer/scheduler specs (`AdamWSpec`, `WarmupCosineSpec`) built inside the experiment file
+> - Checkpoint processor abstraction (local, MLflow, S3 stub) saves full dict checkpoints and the original experiment file as a run artifact
+> - `train` and `eval` apps rewired to load experiments; `eval` downloads the run's experiment file and rebuilds its windows
+> - Tracker rewrite: dedicated subclasses, dict CPU stores, explicit kwargs, no singleton config reads
+> - Runtime `Registry` replaced by `@component` marker + `utils.build_helper` for package `__init__` blocks
+> - basedpyright strict, Python 3.13, keyword-only constructors throughout
+>
+> </details>
 
 </details>
 
 ## v1.1
 <details>
-<summary><b>v1.1.0 Text Embedding (Planned)</b></summary>
+<summary><b>v1.1.0 Migrate remaining apps to v1.0 config shape (Planned)</b></summary>
 
-- Embed string columns via pre-processing CLI
+- Migrate `preprocess`, `describe`, and `engineer` apps to load machine settings via `config.env.load_env(...)`
+- Add `[env]` CLI override flags to all remaining apps
+- Remove the temporary Phase-0 `config/env.py` `__getattr__` shim
 
 </details>
 
