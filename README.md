@@ -205,11 +205,23 @@ Data pre-processing CLI and custom PyTorch Datasets/Loaders forming a flexible E
 
 ## v1.1
 <details>
-<summary><b>v1.1.0 Migrate remaining apps to v1.0 config shape (Planned)</b></summary>
+<summary><b>v1.1.0 Migrate remaining apps + robust preprocessing + local/Modal prep (Planned)</b></summary>
 
 - Migrate `preprocess`, `describe`, and `engineer` apps to load machine settings via `config.env.load_env(...)`
 - Add `[env]` CLI override flags to all remaining apps
 - Remove the temporary Phase-0 `config/env.py` `__getattr__` shim
+- Make preprocessing robust: lazy embedder loading, pluggable embedding models, CPU/CUDA support
+- Introduce `Runtime` and `DataSource` abstractions so local and Modal execution share the same app code
+
+</details>
+
+## v1.2
+<details>
+<summary><b>v1.2.0 Local / Modal runtime split (Planned)</b></summary>
+
+- Implement `modal` runtime backend using the abstractions from v1.1
+- Add Modal volume-backed data sources and Modal GPU embedder
+- Run `train`, `eval`, and `preprocess`, with `--runtime modal`
 
 </details>
 
