@@ -1,9 +1,8 @@
 import math
 import os
-from dataclasses import dataclass
 from logging import getLogger
 from pathlib import Path
-from typing import Literal, NamedTuple
+from typing import ClassVar, NamedTuple
 
 import mlflow
 import numpy as np
@@ -14,12 +13,8 @@ from rich.table import Table
 from sklearn.metrics import (  # pyright: ignore[reportUnknownVariableType, reportMissingTypeStubs]
     PrecisionRecallDisplay,
     RocCurveDisplay,
-    balanced_accuracy_score,
-    mean_absolute_error,
-    precision_score,
-    recall_score,
-    roc_auc_score,
 )
+from torch import Tensor
 
 from utils.logging import setup_logger
 
@@ -27,24 +22,6 @@ from ..losses.entropy import norm_entropy_loss
 
 logger = getLogger(__name__)
 _ = setup_logger(logger)
-
-
-class StoreParams(NamedTuple):
-    name: str
-    batch_shape: tuple[int, ...]
-    buffer_size: int
-    buffer_device: torch.device
-    max_store: int
-    n_examples: int
-
-
-@dataclass
-class Store:
-    name: str
-    buffer: torch.Tensor
-    store: list[torch.Tensor]
-    buffer_cursor: torch.Tensor
-    store_cursor: int
 
 
 class MetricTuple(NamedTuple):
@@ -56,40 +33,37 @@ class MetricTuple(NamedTuple):
 
 class MetricTracker:
     """
-    Classification Metrics Tracker:
+    Base metric tracker.
 
-    Stores intermediate outputs on GPU, calcualtes results, displays them
+    Stores intermediate outputs as CPU-side tensors, calculates results, and
+    displays them. Subclasses declare the store names they consume via
+    ``store_names`` and override ``calc_metrics`` for task-specific math.
 
     args:
-        output_shape: shape out output by model
-        output_buffer_size: n. of outputs that will be stored in 'fast' buffer
-        output_max_size: n. of outputs that will be stored before moving to CPU
-
+        device: torch device used for the run (kept for interface compatibility).
+        dtype: torch dtype used for the run (kept for interface compatibility).
+        export: whether to export gathered stores to disk.
+        export_loc: directory to export stores to when ``export`` is True.
     """
+
+    store_names: ClassVar[tuple[str, ...]] = ()
 
     def __init__(
         self,
-        store_params: tuple[StoreParams, ...],
-        dtype: torch.dtype,
+        *,
         device: torch.device,
-        config,
+        dtype: torch.dtype,
         export: bool = False,
         export_loc: Path | None = None,
-        buffer: bool = False,
-    ):
+    ) -> None:
         assert export or export_loc is None, "Provide a location to export metrics to"
 
         self.dtype: torch.dtype = dtype
         self.device: torch.device = device
-        self.config = config
-        self.buffer = buffer
         self.export = export
         self.export_loc = export_loc
-        self.store_params: dict[str, StoreParams] = {
-            params.name: params for params in store_params
-        }
-        self.stores: dict[str, Store] = {
-            params.name: self._init_store(params) for params in store_params
+        self.stores: dict[str, list[Tensor]] = {
+            name: [] for name in self.store_names
         }
 
         self._init_metric_stores()
@@ -97,79 +71,36 @@ class MetricTracker:
         # rich console
         self.console: Console = Console()
 
-    def _init_store(self, params: StoreParams) -> Store:
-        if self.buffer:
-            buffer = (
-                torch.empty(
-                    (params.buffer_size, *params.batch_shape),
-                    dtype=self.dtype,
-                    device=params.buffer_device,
-                ),
-            )
-        else:
-            buffer = torch.tensor(float("nan"))
-        return Store(
-            name=params.name,
-            buffer=buffer,
-            store=[],
-            buffer_cursor=torch.tensor(0, dtype=torch.int32, device=self.device),
-            store_cursor=0,
-        )
-
     def _init_metric_stores(self) -> None:
         self.metric_store: dict[str, list[MetricTuple]] = {}
         self.metric_df: pd.DataFrame = pd.DataFrame()
 
-    def _reset_store(self, store: Store) -> Store:
-        self.stores[store.name] = self._init_store(self.store_params[store.name])
-        return self.stores[store.name]
+    def _ensure_store(self, name: str) -> list[Tensor]:
+        if name not in self.stores:
+            self.stores[name] = []
+        return self.stores[name]
 
     def clear(self) -> None:
-        for store in self.stores.values():
-            _ = self._reset_store(store)
+        for name in list(self.stores.keys()):
+            self.stores[name] = []
         self._init_metric_stores()
 
-    def _flush_buffer(self, store: Store) -> None:
-        "Flushed bufffer to CPU, resets cursor"
-        store.store.append(store.buffer.flatten(end_dim=1).cpu())
-        store.buffer = torch.empty_like(store.buffer)
-        store.buffer_cursor = torch.zeros_like(store.buffer_cursor)
-        store.store_cursor += store.store[-1].size(0)
-
-    def _write_buffer(self, value: torch.Tensor, store: Store) -> None:
-        "Writes value to store buffer"
-        store.buffer[store.buffer_cursor] = value.detach()
-        store.buffer_cursor.add_(1)
-
-    def _process_value(self, value: torch.Tensor, store: Store | str) -> None:
-        """Stores outputs in buffer, syncs buffer to CPU when full and flushes, calculates metrics when store full and clears
-        input:
-            value: Tensor to be stored
-            store: store or name of store
-        """
-        if isinstance(store, str):
-            if store not in self.stores.keys():
-                logger.error(f"Store '{store}' not found ")
-                return
-            store = self.stores[store]
-
+    def _process_value(self, value: Tensor, store_name: str) -> None:
+        """Stores a single value in its CPU-side list after NaN-checking."""
         if torch.any(torch.isnan(value)):
             logger.error(
-                f"NaN values passed to process_value, not writing to buffer store {store if isinstance(store, str) else store.name}"
+                f"NaN values passed to process_value, not writing to store {store_name}"
             )
             return
 
-        if self.buffer:
-            buffer_full = store.buffer_cursor >= store.buffer.size(0)
-            if buffer_full:
-                _ = self._flush_buffer(store)
-            _ = self._write_buffer(value, store)
-        else:
-            store.store.append(value.cpu())
+        store = self._ensure_store(store_name)
+        store.append(value.detach().cpu())
 
     def process_values(
-        self, values: tuple[torch.Tensor, ...], store_names: tuple[str, ...]
-    ):
+        self,
+        values: tuple[Tensor, ...],
+        store_names: tuple[str, ...],
+    ) -> None:
         for i, value in enumerate(values):
             if torch.any(torch.isnan(value)):
                 logger.error(
@@ -182,52 +113,55 @@ class MetricTracker:
 
     def _gather_store(
         self,
-        store: Store | None = None,
-        store_name: str | None = None,
-    ) -> torch.Tensor | None:
-        """Concatenates and flattens all stored buffers
+        *,
+        store_name: str,
+    ) -> Tensor:
+        """Concatenates and flattens all stored buffers for a single store.
 
         out shape: (batch, *output_shape)
         """
-        if store is None:
-            if store_name is None:
-                logger.error(
-                    "Store and Store_name are None, cannot gather store, returning NaN tensor"
-                )
-                return torch.tensor(float("nan"))
-            store = self.stores[store_name]
-        if self.buffer:
-            _ = self._flush_buffer(store)
+        store = self._ensure_store(store_name)
 
-        if len(store.store) > 0:
-            all_values: torch.Tensor = torch.concatenate(store.store)
+        if len(store) > 0:
+            all_values: Tensor = torch.cat(store)
             if self.export and self.export_loc is not None:
                 logger.debug(
-                    f"Exporting {store.name} store to {self.export_loc.resolve()}"
+                    f"Exporting {store_name} store to {self.export_loc.resolve()}"
                 )
                 os.makedirs(self.export_loc, exist_ok=True)
-                np.save(self.export_loc / store.name, all_values.numpy())
-            _ = self._reset_store(store)
+                np.save(self.export_loc / store_name, all_values.numpy())
+            self.stores[store_name] = []
             return all_values
         else:
-            logger.error(f"Store {store.name} contains no values, resetting")
-            _ = self._reset_store(store)
+            logger.error(f"Store {store_name} contains no values, resetting")
+            self.stores[store_name] = []
+            return torch.tensor(float("nan"))
 
     def log_metric(
         self,
         name: str,
         value: float,
         weight: float | int,
-    ):
+    ) -> None:
         if name not in self.metric_store.keys():
             self.metric_store[name] = []
         self.metric_store[name].append(MetricTuple(value, weight))
 
+    def log_batch_metric(
+        self,
+        name: str,
+        value: float,
+        *,
+        step: int,
+    ) -> None:
+        """Owns all batch-level metric logging, including ``train_loss-batch`` (F3)."""
+        mlflow.log_metric(name, value, step=step, synchronous=False)
+
     def _log_plots(
         self,
         prefix: str,
-        y_true: np.ndarray,
-        probs: np.ndarray,
+        y_true: Tensor,
+        probs: Tensor,
         step: int,
     ) -> None:
         try:
@@ -258,8 +192,9 @@ class MetricTracker:
 
     def calc_metrics(
         self,
+        *,
+        prefix: str,
         step: int,
-        prefix: str = "",
     ) -> None:
         try:
             logits = self._gather_store(store_name=f"{prefix}_logits")
@@ -305,13 +240,12 @@ class MetricTracker:
 
     def report(
         self,
-        progress_bar,
+        progress_bar: object,
+        *,
         epoch: int | None = None,
-        aggregate_metrics: dict[str, float] | None = None,
     ) -> dict[str, float]:
         "Generates rich.Table, renders as string via capture(), returns"
-        if aggregate_metrics is None:
-            aggregate_metrics = self._aggregate_metrics()
+        aggregate_metrics = self._aggregate_metrics()
 
         cols: list[str] = ["cyan", "green"]
         table: Table = Table(show_header=True, pad_edge=True, padding=(0, 1))
