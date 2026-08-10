@@ -50,16 +50,66 @@ class WarmupCosineSpec(LRSchedulerSpec):
             last_epoch=-1,
         )
 
-        schedulers = [warmup_scheduler, cosine_scheduler]
-        # Legacy behaviour: drop milestones < 1 and their paired scheduler.
-        milestones_local = [
-            m for m in milestones if m >= 1
-        ]
-        schedulers = [
-            s
-            for s, m in zip(schedulers, milestones, strict=False)
-            if m >= 1
-        ]
+        warmup_milestone = milestones[0]
+        if warmup_milestone >= 1:
+            schedulers = [warmup_scheduler, cosine_scheduler]
+            milestones_local = [warmup_milestone]
+        else:
+            # Legacy behaviour: skip the warmup phase entirely.
+            schedulers = [cosine_scheduler]
+            milestones_local = []
+
+        return torch.optim.lr_scheduler.SequentialLR(
+            optimizer,
+            schedulers,
+            milestones_local,
+            last_epoch=-1,
+        )
+
+
+@dataclass(kw_only=True)
+class WarmupCosineAnnealingSpec(LRSchedulerSpec):
+    """Linear warmup followed by cosine annealing decay to ``eta_min``.
+
+    Differs from :class:`WarmupCosineSpec` in the second phase: it uses
+    :class:`~torch.optim.lr_scheduler.CosineAnnealingLR` to decay the LR
+    smoothly toward ``eta_min`` over the remaining epochs without warm restarts.
+    """
+
+    milestones: tuple[int, ...]
+    warmup_start_factor: float
+    eta_min: float
+    epochs: int
+
+    def build(self, *, optimizer: Optimizer) -> LRScheduler:
+        milestones = list(self.milestones)
+        assert sum(milestones) != self.epochs, (
+            "Sum of milestones must not equal total epochs"
+        )
+
+        warmup_scheduler = torch.optim.lr_scheduler.LinearLR(
+            optimizer,
+            start_factor=self.warmup_start_factor,
+            end_factor=1.0,
+            total_iters=milestones[0],
+            last_epoch=-1,
+        )
+
+        cosine_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+            optimizer,
+            T_max=self.epochs - milestones[0],
+            eta_min=self.eta_min,
+            last_epoch=-1,
+        )
+
+        warmup_milestone = milestones[0]
+        if warmup_milestone >= 1:
+            schedulers = [warmup_scheduler, cosine_scheduler]
+            milestones_local = [warmup_milestone]
+        else:
+            # Legacy behaviour: skip the warmup phase entirely.
+            schedulers = [cosine_scheduler]
+            milestones_local = []
 
         return torch.optim.lr_scheduler.SequentialLR(
             optimizer,
