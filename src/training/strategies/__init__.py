@@ -1,3 +1,9 @@
-from .base import Strategy
+from .base import BaseStrategy, Strategy, StrategyConfig
+from .classification import ClassificationStrategy
 
-__all__ = ["Strategy"]
+__all__ = [
+    "BaseStrategy",
+    "ClassificationStrategy",
+    "Strategy",
+    "StrategyConfig",
+]
