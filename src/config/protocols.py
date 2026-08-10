@@ -4,7 +4,11 @@ from data.formaters.base import Formater
 from data.sources.base import DataSource
 from training.checkpointing.base import Checkpoint, CheckpointProcessor, CheckpointRef
 from training.optimizers.specs import AdamWSpec, OptimizerSpec
-from training.schedulers import LRSchedulerSpec, WarmupCosineSpec
+from training.schedulers import (
+    LRSchedulerSpec,
+    WarmupCosineAnnealingSpec,
+    WarmupCosineSpec,
+)
 from training.strategies import Strategy
 from training.tracking.base import MetricTracker
 
@@ -19,5 +23,6 @@ __all__ = [
     "MetricTracker",
     "OptimizerSpec",
     "Strategy",
+    "WarmupCosineAnnealingSpec",
     "WarmupCosineSpec",
 ]
