@@ -4,7 +4,7 @@ from collections.abc import Mapping
 from datetime import date
 from logging import getLogger
 from pathlib import Path
-from typing import Any, override
+from typing import Any, Self, override
 
 import polars as pl
 from pydantic import BaseModel, ConfigDict
@@ -73,6 +73,7 @@ class GraphDataset[T_Config](Dataset[CitationGraphDatasetOutput]):
             "Shuffle and Sample cannot both be used"
         )
         self.config = config
+        self.source = source
         self.formater = formater or GraphFormater(
             max_len=config.max_len,
             graph_max_len=config.graph_max_len,
@@ -228,6 +229,26 @@ class GraphDataset[T_Config](Dataset[CitationGraphDatasetOutput]):
         else:
             self.df = lf.collect(engine="streaming")
             logger.info(f"Hot path {self.hot_path} loaded into mem")
+
+    def with_window(
+        self,
+        *,
+        t_start: date | None = None,
+        t_end: date | None = None,
+    ) -> Self:
+        """Return a new dataset over the same source with updated time bounds.
+
+        This re-initialises the dataset from its stored config so that the
+        in-memory Polars frame reflects the new window (D1).
+        """
+        new_config = self.config.model_copy(
+            update={"t_start": t_start, "t_end": t_end}
+        )
+        return type(self)(
+            config=new_config,
+            source=self.source,
+            formater=self.formater,
+        )
 
     def __len__(self) -> int:
         return len(self.df)
